@@ -62,3 +62,33 @@ def reset_registry() -> None:
 
 def list_registered() -> list[str]:
     return sorted(_ADAPTERS)
+
+
+# ---------- Auto-registration of all built-in adapters ----------
+
+_BUILTIN_ADAPTER_MODULES = (
+    "yfinance",
+    "alpaca",
+    "benzinga",
+    "polygon",
+    "alpha_vantage",
+)
+
+
+def register_all_available() -> list[str]:
+    """Attempt to import every built-in adapter module. Silently skip ones whose
+    vendor SDK is not installed. Returns the list of vendor names successfully
+    registered.
+
+    Called automatically on `import data_vendor_router`. Consumers that want
+    to opt out can clear the registry via `reset_registry()` after import,
+    or install the package without the [vendors] extras.
+    """
+    registered = []
+    for module_name in _BUILTIN_ADAPTER_MODULES:
+        try:
+            __import__(f"data_vendor_router.vendors.{module_name}")
+            registered.append(module_name)
+        except ImportError:
+            pass  # vendor SDK / dependency missing; skip silently
+    return registered
