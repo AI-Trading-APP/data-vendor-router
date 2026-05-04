@@ -72,6 +72,7 @@ _BUILTIN_ADAPTER_MODULES = (
     "benzinga",
     "polygon",
     "alpha_vantage",
+    "newsapi",
 )
 
 

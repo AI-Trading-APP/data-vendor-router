@@ -10,7 +10,8 @@ def test_default_ohlcv_chain():
 
 
 def test_default_news_chain():
-    assert get_configured_chain("news") == ["benzinga", "alpha_vantage", "yfinance"]
+    """v0.1.1: NewsAPI promoted to primary; Benzinga / Alpha Vantage / yfinance fall back."""
+    assert get_configured_chain("news") == ["newsapi", "benzinga", "alpha_vantage", "yfinance"]
 
 
 def test_default_fundamentals_chain():
