@@ -20,7 +20,10 @@ import os
 
 DEFAULT_CHAINS: dict[str, list[str]] = {
     "ohlcv":         ["yfinance", "alpaca", "polygon"],
-    "news":          ["benzinga", "alpha_vantage", "yfinance"],
+    # NewsAPI added as primary in v0.1.1 — NewsService's actual primary today.
+    # Benzinga/Alpha Vantage stay as fallbacks for deployments with their keys;
+    # yfinance scrape is last resort (free, but lowest data quality).
+    "news":          ["newsapi", "benzinga", "alpha_vantage", "yfinance"],
     "fundamentals":  ["yfinance", "alpha_vantage", "polygon"],
 }
 
