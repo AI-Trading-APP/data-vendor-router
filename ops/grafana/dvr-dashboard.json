@@ -1,0 +1,133 @@
+{
+  "title": "Data Vendor Router (BB3)",
+  "uid": "dvr-overview",
+  "schemaVersion": 38,
+  "version": 1,
+  "tags": ["bb3", "data-vendor-router", "tradingagents-adoption"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Per-vendor success rate (last 6h)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (vendor) (rate(data_vendor_router_calls_total{outcome=\"success\"}[5m])) / sum by (vendor) (rate(data_vendor_router_calls_total[5m]))"
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "red" },
+            { "value": 0.95, "color": "yellow" },
+            { "value": 0.99, "color": "green" }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 2,
+      "title": "Fallback rate per category",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (category) (rate(data_vendor_router_fallback_total[5m]))",
+          "legendFormat": "{{category}}"
+        }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "p50 / p95 / p99 latency per vendor",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 4, "w": 12, "h": 8 },
+      "targets": [
+        {
+          "expr": "histogram_quantile(0.50, sum by (vendor, le) (rate(data_vendor_router_latency_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{vendor}}"
+        },
+        {
+          "expr": "histogram_quantile(0.95, sum by (vendor, le) (rate(data_vendor_router_latency_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{vendor}}"
+        },
+        {
+          "expr": "histogram_quantile(0.99, sum by (vendor, le) (rate(data_vendor_router_latency_seconds_bucket[5m])))",
+          "legendFormat": "p99 {{vendor}}"
+        }
+      ],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+    {
+      "id": 4,
+      "title": "Circuit-breaker state per vendor (0=closed, 1=half-open, 2=open)",
+      "type": "stat",
+      "gridPos": { "x": 0, "y": 12, "w": 6, "h": 4 },
+      "targets": [
+        { "expr": "data_vendor_circuit_breaker_state", "legendFormat": "{{vendor}}" }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "mode": "absolute", "steps": [
+            { "value": null, "color": "green" },
+            { "value": 1, "color": "yellow" },
+            { "value": 2, "color": "red" }
+          ]}
+        }
+      }
+    },
+    {
+      "id": 5,
+      "title": "Breaker state-change events (last 24h)",
+      "type": "timeseries",
+      "gridPos": { "x": 6, "y": 12, "w": 6, "h": 4 },
+      "targets": [
+        {
+          "expr": "sum by (vendor, new_state) (increase(data_vendor_circuit_breaker_state_changes_total[1h]))",
+          "legendFormat": "{{vendor}} -> {{new_state}}"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "title": "Outcome distribution per vendor (counts)",
+      "type": "barchart",
+      "gridPos": { "x": 0, "y": 16, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "sum by (vendor, outcome) (increase(data_vendor_router_calls_total[1h]))",
+          "legendFormat": "{{vendor}} - {{outcome}}"
+        }
+      ]
+    },
+    {
+      "id": 7,
+      "title": "Fallback events (from -> to, by reason)",
+      "type": "table",
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 6 },
+      "targets": [
+        {
+          "expr": "topk(20, sum by (category, from_vendor, to_vendor, reason) (increase(data_vendor_router_fallback_total[1h])))",
+          "format": "table",
+          "instant": true
+        }
+      ]
+    }
+  ],
+  "templating": {
+    "list": [
+      {
+        "name": "vendor",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(data_vendor_router_calls_total, vendor)",
+        "includeAll": true,
+        "multi": true
+      }
+    ]
+  }
+}
