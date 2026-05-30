@@ -73,6 +73,7 @@ _BUILTIN_ADAPTER_MODULES = (
     "polygon",
     "alpha_vantage",
     "newsapi",
+    "tiingo",
 )
 
 

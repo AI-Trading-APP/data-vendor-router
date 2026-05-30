@@ -6,12 +6,13 @@ from data_vendor_router.chains import DEFAULT_CHAINS, get_configured_chain
 
 
 def test_default_ohlcv_chain():
-    assert get_configured_chain("ohlcv") == ["yfinance", "alpaca", "polygon"]
+    """v0.1.2: Tiingo inserted between yfinance and Alpaca as free-tier fallback."""
+    assert get_configured_chain("ohlcv") == ["yfinance", "tiingo", "alpaca", "polygon"]
 
 
 def test_default_news_chain():
-    """v0.1.1: NewsAPI promoted to primary; Benzinga / Alpha Vantage / yfinance fall back."""
-    assert get_configured_chain("news") == ["newsapi", "benzinga", "alpha_vantage", "yfinance"]
+    """v0.1.2: Tiingo slotted right behind NewsAPI as second free-tier news source."""
+    assert get_configured_chain("news") == ["newsapi", "tiingo", "benzinga", "alpha_vantage", "yfinance"]
 
 
 def test_default_fundamentals_chain():
