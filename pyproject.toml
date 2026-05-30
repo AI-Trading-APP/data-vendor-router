@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-vendor-router"
-version = "0.1.0"
-description = "Category-routed data-fetch with automatic per-vendor fallback (yfinance, Alpaca, Benzinga, Polygon, Alpha Vantage)"
+version = "0.1.2"
+description = "Category-routed data-fetch with automatic per-vendor fallback (yfinance, Alpaca, Benzinga, Polygon, Alpha Vantage, NewsAPI, Tiingo)"
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "MIT" }

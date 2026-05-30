@@ -3,6 +3,42 @@
 All notable changes to `data-vendor-router` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.1.2] — 2026-05-30
+
+Seventh vendor adapter (`tiingo`) covering BOTH News and OHLCV — second
+free-tier source for each chain. Motivated by the zero-spend platform
+certification plan ([AITradingAPP#431](https://github.com/AI-Trading-APP/AITradingAPP/pull/431)):
+NewsAPI free is 100 req/day, Tiingo free is 1000 req/day with cleaner data,
+so chaining them gives newsservice ~11× more headroom without paid keys.
+
+### Added
+
+- `vendors/tiingo.py` adapter implementing both `NewsProvider.get_news` and
+  `OHLCVProvider.get_ohlcv` against Tiingo's REST API (token-header auth)
+- Tiingo slotted into `DEFAULT_CHAINS`:
+  - **news**: `[newsapi, tiingo, benzinga, alpha_vantage, yfinance]` (was `[newsapi, benzinga, alpha_vantage, yfinance]`)
+  - **ohlcv**: `[yfinance, tiingo, alpaca, polygon]` (was `[yfinance, alpaca, polygon]`)
+- `tiingo` added to `_BUILTIN_ADAPTER_MODULES` for auto-registration
+- 18 new unit tests in `tests/test_vendor_tiingo.py` (happy-path + 429/401/404/500/network + dict-instead-of-list + adj→raw fallback + chain position + registry membership)
+- `test_chains.py` assertions updated to expect Tiingo's position in news/ohlcv chains
+
+### Notes
+
+- Requires `TIINGO_API_KEY` env var
+- No new package dependencies (uses existing `httpx`)
+- Backwards-compatible — chains are env-overridable via `DVR_*_PRIORITY`, so
+  deployments that want the v0.1.1 chain can set
+  `DVR_NEWS_PRIORITY=newsapi,benzinga,alpha_vantage,yfinance`
+
+## [0.1.1] — 2026-05-13
+
+NewsAPI adapter promoted as primary in the News chain (sixth vendor).
+
+### Added
+
+- `vendors/newsapi.py` adapter — NewsService's actual primary today
+- `DEFAULT_CHAINS["news"]` rewritten to `[newsapi, benzinga, alpha_vantage, yfinance]`
+
 ## [0.1.0] — 2026-05-04
 
 Initial release. Building Block 3 (BB3) of the
