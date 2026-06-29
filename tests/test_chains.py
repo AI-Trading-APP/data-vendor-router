@@ -1,13 +1,21 @@
-import os
-
-import pytest
-
 from data_vendor_router.chains import DEFAULT_CHAINS, get_configured_chain
 
 
 def test_default_ohlcv_chain():
-    """v0.1.2: Tiingo inserted between yfinance and Alpaca as free-tier fallback."""
-    assert get_configured_chain("ohlcv") == ["yfinance", "tiingo", "alpaca", "polygon"]
+    """DVR-3 / v0.1.3: polygon is primary; yfinance demoted to last (IP-blocked on VPS)."""
+    assert get_configured_chain("ohlcv") == ["polygon", "tiingo", "alpaca", "yfinance"]
+
+
+def test_default_ohlcv_chain_polygon_first():
+    """DVR-3: polygon must be the first OHLCV vendor in the default chain."""
+    chain = get_configured_chain("ohlcv")
+    assert chain[0] == "polygon", f"Expected polygon first, got {chain[0]!r}"
+
+
+def test_default_ohlcv_chain_yfinance_last():
+    """DVR-3: yfinance must be the last OHLCV vendor in the default chain (inert VPS fallback)."""
+    chain = get_configured_chain("ohlcv")
+    assert chain[-1] == "yfinance", f"Expected yfinance last, got {chain[-1]!r}"
 
 
 def test_default_news_chain():
