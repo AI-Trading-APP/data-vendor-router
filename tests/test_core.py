@@ -280,3 +280,34 @@ def test_empty_provider_chain_raises_no_vendors_configured():
     """
     with pytest.raises(NoVendorsConfigured):
         get_ohlcv("NVDA", date(2026, 4, 1), date(2026, 4, 2), provider_chain=[])
+
+
+# ============== DVR-1 — all vendors rate-limit → primary_reason=="rate_limit" ==============
+
+
+def test_dvr1_all_vendors_rate_limit_primary_reason(make_stub, monkeypatch):
+    """When EVERY vendor in the chain raises _RateLimitError (HTTP 429),
+    get_ohlcv must raise AllVendorsFailed with primary_reason == "rate_limit".
+
+    This guards the precompute classify_exception path: QUOTA classification
+    depends on AllVendorsFailed.primary_reason being exactly "rate_limit", NOT
+    "unknown" or "circuit_breaker_open".
+
+    Design ref: design.md §3.1 / DVR-1 ticket.
+    """
+    monkeypatch.setenv("DVR_OHLCV_PRIORITY", "polygon,tiingo")
+    pg = make_stub("polygon")
+    ti = make_stub("tiingo")
+    pg.program("get_ohlcv", raises(_RateLimitError("429 Polygon rate limit")))
+    ti.program("get_ohlcv", raises(_RateLimitError("429 Tiingo rate limit")))
+
+    with pytest.raises(AllVendorsFailed) as exc_info:
+        get_ohlcv("AAPL", date(2026, 4, 1), date(2026, 4, 2))
+
+    err = exc_info.value
+    assert err.primary_reason == "rate_limit", (
+        f"Expected primary_reason='rate_limit', got {err.primary_reason!r}. "
+        "classify_exception in precomputeservice depends on this exact value."
+    )
+    assert len(err.attempts) == 2
+    assert all(reason == "rate_limit" for _, reason in err.attempts)
