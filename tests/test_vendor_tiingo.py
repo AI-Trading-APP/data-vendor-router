@@ -200,8 +200,9 @@ def test_default_news_chain_includes_tiingo():
 
 
 def test_default_ohlcv_chain_includes_tiingo():
-    """v0.1.2: Tiingo between yfinance and Alpaca in the OHLCV chain."""
+    """DVR-3 / v0.1.3: Tiingo is in the OHLCV chain between polygon and alpaca."""
     from data_vendor_router.chains import DEFAULT_CHAINS
     chain = DEFAULT_CHAINS["ohlcv"]
     assert "tiingo" in chain
-    assert chain.index("yfinance") < chain.index("tiingo") < chain.index("alpaca")
+    # DVR-3: polygon is now first; tiingo stays between polygon and alpaca
+    assert chain.index("polygon") < chain.index("tiingo") < chain.index("alpaca")
