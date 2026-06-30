@@ -1,6 +1,6 @@
 # FEATURE: OpenBB Platform as unified data provider behind DVR
 
-_Last updated: 2026-06-30 — Phases 0-2 DONE, Phase 3 (P1 implementation) starting_
+_Last updated: 2026-06-30 — Phases 0-2 DONE; PR-1 (P1) BUILT + 2-reviewer VERIFIED green. Next: DoD audit → release → VPS smoke._
 
 ## What & why (plain English)
 Add the free, open-source **OpenBB Platform** Python library as one more market-data
@@ -16,39 +16,41 @@ the live VPS where bare yfinance is IP-blocked and dies. Start free (SEC EDGAR f
 ## Branch / worktree
 - Repo: data-vendor-router | Worktree: ../data-vendor-router-feat-openbb-data-layer
 - Branch: feature/openbb-data-layer (off origin/development @61e4858) | Target: development (NOT main)
-
-## Confirmed DVR contract (file:line — from gap-analysis)
-- Protocols `vendors/__init__.py:15-32` (structural/getattr-dispatched, no inheritance); registry `:37-96`
-- Router/fallback `core.py:29-134`; public API `core.py:140-189`; breaker `breakers.py:17-25`; retry `retry.py:26-41`
-- Chains `chains.py:26/30/34` + env override `DVR_OHLCV_PRIORITY` `:37-43`; DTOs `dto.py:15-54`
-- Template to mirror: `vendors/polygon.py:35-139`. Consumers (TIA/Screener/PE/precompute/news) need NO change.
+- VPS: ssh ktrading-test (= root@147.93.27.80, key ~/.ssh/ktrading_deploy). NOT teclavya.
 
 ## Phases done
-- Phase 0 feasibility: gap-analysis.md (Feasible, reuse-heavy). 
-- Phase 1 spec: spec.md (9 stories, 34 ACs, 6 NFRs, 8 edge cases). No human-gate.
-- Phase 2 design+roadmap: design.md (LLD + exception table + schema-canary) + roadmap.md (8 tickets, 2 PRs).
+- Phase 0 feasibility, Phase 1 spec, Phase 2 design+roadmap — all committed (gap-analysis/spec/design/roadmap.md).
+- Phase 3 PR-1 (P1 MVP) BUILT + 2-reviewer VERIFIED:
+  - Commit 9a76205 "feat(openbb): PR-1 MVP cluster". Files: NEW vendors/openbb.py (152L), NEW tests/test_vendor_openbb.py (299L),
+    edits to pyproject.toml (v0.1.3 + [openbb] extras), vendors/__init__.py, chains.py, retry.py, tests/test_chains.py.
+  - Implementer Docker test: 11 new passed; full suite 123 passed/2 skipped.
+  - INDEPENDENT verifier (fresh Docker re-run, did NOT build it): VERDICT PASS. 11/11 + 123 passed/2 skipped, ZERO regressions,
+    no pre-existing issues, no blockers. Every AC checked w/ file:line evidence. Lazy-import + protocol conformance confirmed.
 
 ## All scoping decisions (autonomous, logged — reversible technical, NOT business gates)
-1. OHLCV chain = ["polygon","tiingo","alpaca","openbb","yfinance"] (openbb slot 4).
-2. Free split: OHLCV via OpenBB→FMP then Polygon (keys held); fundamentals via OpenBB→SEC(free)+FMP; macro via FRED(free).
-3. P1 INCLUDES SEC EDGAR fundamentals (confirmed; spec US-5 is P1). P2 = FRED macro + news.
-4. AC errata: get_adapter raises ValueError not KeyError — implementer corrects TEST assertion. No code change.
+1. OHLCV chain = ["polygon","tiingo","alpaca","openbb","yfinance"]. Fundamentals chain += "openbb" tail.
+2. Free split: OHLCV via OpenBB→FMP then Polygon (keys held); fundamentals via OpenBB→SEC(free)+FMP; macro via FRED(free,P2).
+3. P1 INCLUDES SEC EDGAR fundamentals (built). P2 = FRED macro + news.
+4. AC errata: get_adapter raises ValueError not KeyError — handled in TEST-1 via isinstance. No code change.
 5. Packages openbb-core>=4.3,<5.0 + openbb-fmp + openbb-polygon + openbb-sec (P1); openbb-fred (P2). Not meta-package.
-6. Creds via obb.user.credentials from env. Lazy-import obb inside methods; module-level ImportError guard for silent-skip.
-7. Schema-canary: missing OHLC cols -> VendorResponseInvalid (loud fallback, not crash). Pin openbb-core<5.0.
+6. Creds via obb.user.credentials from env. Lazy-import obb; module-level ImportError guard for silent-skip.
+7. Schema-canary missing OHLC cols -> VendorResponseInvalid. Pin openbb-core<5.0.
+8. Unit tests MOCK openbb (sys.modules) — real openbb packages only needed at VPS deploy, not for unit tests.
 
-## Roadmap / PR cadence
-- PR-1 (P1 MVP): BE-1 (pyproject extras) → BE-2 (openbb.py adapter: get_ohlcv+get_fundamentals) →
-  BE-3 (wire __init__/chains/retry) → TEST-1 (11 mocked unit tests) → DEVOPS-1 (VPS deploy+live smoke).
-- PR-2 (P2): BE-4 (get_macro+get_news) + BE-5 (DTO+core get_macro+chains+openbb-fred) + TEST-2 (5 tests).
+## PR cadence
+- PR-1 (P1 MVP): BE-1/BE-2/BE-3/TEST-1 — DONE+VERIFIED on branch. Pending: DoD audit → merge dev → release → DEVOPS-1 VPS smoke.
+- PR-2 (P2): BE-4 (get_macro+get_news) + BE-5 (DTO+core get_macro+chains+openbb-fred) + TEST-2 — AFTER P1 proven on VPS.
 
-## Done
-- Phases 0-2 committed on branch (a7af663, 50b8c5f, 23db908, + roadmap commit pending).
-
-## Next
-- Phase 3 PR-1: spawn backend-agent for BE-1+BE-2+BE-3 cluster (one file + small edits), then a
-  verifier/qa for TEST-1 that RE-RUNS the Docker test build. Then 2-reviewer gate. Then DEVOPS-1.
+## Next (resume here)
+1. Phase 4: independent dod-auditor-agent (must NOT be builder/verifier/orchestrator) RE-RUNS evidence vs 8-phase DoD. Honor any block.
+2. If DoD passes: merge feature/openbb-data-layer → development (PR), promote development → release.
+3. DEVOPS-1 (devops-agent, haiku): clean-release deploy to ktrading-test, `pip install "data-vendor-router[openbb]"` in DVR venv,
+   confirm FMP_API_KEY/POLYGON_API_KEY in VPS env (present from polygon feature), run AC-7 smokes:
+   (a) DVR_OHLCV_PRIORITY=yfinance AAPL -> AllVendorsFailed (control proving yfinance dead),
+   (b) DVR_OHLCV_PRIORITY=openbb AAPL -> >=1 bar (PROOF), (c) default chain + forced breakers -> openbb slot-4 succeeds,
+   (d) cold-start delta <=200ms. ALL via clean origin/release, NO on-box source edits (§2a).
+4. Then PR-2 (P2). Then learning-promoter-agent close-out. Do NOT run token-economist (on-demand only).
 
 ## Where to resume
 Read this file + roadmap.md + `git -C data-vendor-router log development..feature/openbb-data-layer`.
-Active work unit = PR-1 (P1 MVP). Deploy + VPS smoke is the proof gate (OpenBB beats dead yfinance).
+The OpenBB-beats-yfinance PROOF is the DEVOPS-1 live VPS smoke — that is the feature's whole point and the final gate.
