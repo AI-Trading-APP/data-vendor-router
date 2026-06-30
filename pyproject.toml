@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-vendor-router"
-version = "0.1.3"
+version = "0.1.4"
 description = "Category-routed data-fetch with automatic per-vendor fallback (yfinance, Alpaca, Benzinga, Polygon, Alpha Vantage, NewsAPI, Tiingo, OpenBB)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -24,12 +24,16 @@ vendors = [
     "alpaca-py>=0.35",
 ]
 openbb = [
-    "openbb-core>=4.3,<5.0",
-    "openbb-fmp",
-    "openbb-polygon",
-    "openbb-sec",
+    # Umbrella package required: it is versioned 4.x and triggers the SDK build step
+    # that wires providers into obb.equity.* etc. Provider sub-packages are 1.x (not 4.x).
+    "openbb>=4.7,<5.0",
+    "openbb-core>=1.6,<2.0",
+    "openbb-fmp>=1.6,<2.0",
+    "openbb-polygon>=1.5,<2.0",
+    "openbb-sec>=1.6,<2.0",
+    "openbb-yfinance>=1.6,<2.0",
     # P2 (add when build-out lands):
-    # "openbb-fred",
+    # "openbb-fred>=1.6,<2.0",
 ]
 dev = [
     "pytest>=7.0",

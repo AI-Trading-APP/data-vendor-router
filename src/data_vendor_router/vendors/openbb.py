@@ -1,9 +1,22 @@
 """OpenBB Platform adapter — OHLCV + Fundamentals (P1), Macro + News (P2).
 
-Free MIT SDK. OHLCV via FMP/Polygon keys we hold; fundamentals via SEC EDGAR (free).
-Credentials injected from env (NO ~/.openbb_platform/user_settings.json — VPS headless).
-`obb` is lazy-imported inside methods (NFR-1 cold-start). Module import is guarded so
-register_all_available() silent-skips when the [openbb] extras are absent (NFR-4 / US-4).
+Free MIT SDK. OHLCV via FMP/Polygon keys we hold; fundamentals via SEC EDGAR (free)
+combined with yfinance profile data (free). Credentials injected from env (NO
+~/.openbb_platform/user_settings.json — VPS headless). `obb` is lazy-imported inside
+methods (NFR-1 cold-start). Module import is guarded so register_all_available()
+silent-skips when the [openbb] extras are absent (NFR-4 / US-4).
+
+Real SDK behaviour (verified 2026-06-30 against openbb==4.7.2 / openbb-core==1.6.13):
+  - Umbrella package `openbb>=4.7` required to trigger the SDK build step that wires
+    providers into obb.equity.* etc. Provider sub-packages (openbb-core, openbb-sec, …)
+    are versioned 1.x, NOT 4.x (the prior pin of openbb-core>=4.3 was impossible).
+  - OHLCV: obb.equity.price.historical(symbol, start_date, end_date, provider=…).
+    DataFrame index is datetime.date (no .date() method); use str(idx)[:10] path.
+  - Fundamentals: obb.equity.fundamental.metrics() does NOT support provider="sec".
+    Free fundamentals path = equity.profile(provider="yfinance") for market_cap /
+    sector / dividend_yield, plus equity.fundamental.income(provider="sec") for revenue.
+  - polygon_api_key IS present on credentials when openbb-polygon is installed.
+  - Credential injection via setattr(obb.user.credentials, attr, val) works correctly.
 """
 from __future__ import annotations
 
@@ -23,7 +36,7 @@ from . import register_adapter
 VENDOR = "openbb"
 _EXPECTED_OHLC_COLS = {"open", "high", "low", "close", "volume"}  # schema canary (NFR-3)
 
-# Module-level guard: if openbb-core is NOT installed, raise ImportError so
+# Module-level guard: if openbb umbrella package is NOT installed, raise ImportError so
 # register_all_available() skips this module silently (matches existing pattern).
 try:
     import openbb  # noqa: F401  (presence probe only; real obj lazy-imported per call)
@@ -44,7 +57,10 @@ class OpenBBAdapter:
         ):
             val = os.getenv(env_var)
             if val:  # AC-2.2: unset env -> no error, skip
-                setattr(obb.user.credentials, cred_attr, val)
+                # Only set if the credential field exists on the model
+                # (polygon_api_key requires openbb-polygon to be installed)
+                if hasattr(obb.user.credentials, cred_attr):
+                    setattr(obb.user.credentials, cred_attr, val)
 
     def get_ohlcv(self, ticker: str, start: date, end: date) -> list[OHLCBar]:
         from openbb import obb
@@ -84,9 +100,17 @@ class OpenBBAdapter:
             )
         df = df.rename(columns=str.lower)
         bars: list[OHLCBar] = []
-        for idx, row in df.iterrows():  # idx = DatetimeIndex -> date
+        for idx, row in df.iterrows():
+            # Index is datetime.date (yfinance/polygon) or datetime (fmp).
+            # datetime.date has no .date() method; datetime does. Handle both.
             try:
-                bar_date = idx.date() if hasattr(idx, "date") else date.fromisoformat(str(idx)[:10])
+                if hasattr(idx, "date") and callable(idx.date):
+                    bar_date = idx.date()
+                else:
+                    bar_date = date.fromisoformat(str(idx)[:10])
+            except Exception:  # noqa: BLE001
+                bar_date = date.fromisoformat(str(idx)[:10])
+            try:
                 bars.append(OHLCBar(
                     date=bar_date,
                     open=float(row["open"]),
@@ -105,31 +129,103 @@ class OpenBBAdapter:
         return bars
 
     def get_fundamentals(self, ticker: str) -> FundamentalsSnapshot:
+        """Return FundamentalsSnapshot for ticker.
+
+        Free path (no keys required):
+          1. obb.equity.profile(provider="yfinance")  → market_cap, sector, dividend_yield
+          2. obb.equity.fundamental.income(provider="sec", period="annual", limit=1) → revenue
+
+        NOTE: obb.equity.fundamental.metrics() does NOT accept provider="sec" in the
+        real OpenBB v4 SDK (only fmp/intrinio). We use the free endpoints above instead.
+        If an FMP key is available, the metrics() call is attempted as a richer fallback
+        to fill in pe_ratio and profit_margin.
+        """
         from openbb import obb
-        last_exc = None
-        for provider in ("sec", "fmp"):  # spec: sec(free) then fmp
-            try:
-                obbject = obb.equity.fundamental.metrics(symbol=ticker, provider=provider)
-                df = obbject.to_df()
-                if df is None or df.empty:
-                    raise _NotFoundError(f"openbb no fundamentals for {ticker}")  # AC-5.2/EC-7
+        snap: FundamentalsSnapshot | None = None
+
+        # --- Step 1: profile via yfinance (free, no key) ---
+        try:
+            obbject = obb.equity.profile(symbol=ticker, provider="yfinance")
+            df = obbject.to_df()
+            if df is not None and not df.empty:
                 rec = df.iloc[0].to_dict()
-                return FundamentalsSnapshot(
+                snap = FundamentalsSnapshot(
                     ticker=ticker.upper(),
                     market_cap=rec.get("market_cap"),
-                    pe=rec.get("pe_ratio") or rec.get("pe"),
+                    pe=None,              # not available from profile
                     dividend_yield=rec.get("dividend_yield"),
-                    profit_margin=rec.get("net_profit_margin") or rec.get("profit_margin"),
-                    revenue_ttm=rec.get("revenue"),
+                    profit_margin=None,   # not available from profile
+                    revenue_ttm=None,     # filled below from SEC income
                     sector=rec.get("sector"),
-                    extras={"openbb": rec},  # AC-5.3: extras absorb vendor fields
+                    extras={"openbb_profile": rec},
                 )
-            except (_NotFoundError, VendorResponseInvalid):
-                raise
-            except Exception as exc:  # noqa: BLE001
-                last_exc = self._translate(exc, ticker)
-                continue
-        raise last_exc or _NotFoundError(f"openbb fundamentals unavailable for {ticker}")
+        except Exception as exc:  # noqa: BLE001
+            translated = self._translate(exc, ticker)
+            if isinstance(translated, _NotFoundError):
+                raise translated
+
+        # --- Step 2: SEC income statement for revenue (free, no key) ---
+        try:
+            obbject = obb.equity.fundamental.income(
+                symbol=ticker, provider="sec", period="annual", limit=1
+            )
+            df = obbject.to_df()
+            if df is not None and not df.empty:
+                rec = df.iloc[0].to_dict()
+                revenue = rec.get("total_revenue") or rec.get("operating_revenue")
+                if snap is not None:
+                    # Enrich the existing snap with revenue
+                    snap = FundamentalsSnapshot(
+                        ticker=snap.ticker,
+                        market_cap=snap.market_cap,
+                        pe=snap.pe,
+                        dividend_yield=snap.dividend_yield,
+                        profit_margin=snap.profit_margin,
+                        revenue_ttm=revenue,
+                        sector=snap.sector,
+                        extras={**snap.extras, "openbb_sec_income": rec},
+                    )
+                else:
+                    snap = FundamentalsSnapshot(
+                        ticker=ticker.upper(),
+                        market_cap=None,
+                        pe=None,
+                        dividend_yield=None,
+                        profit_margin=None,
+                        revenue_ttm=revenue,
+                        sector=None,
+                        extras={"openbb_sec_income": rec},
+                    )
+        except Exception as exc:  # noqa: BLE001
+            # SEC income is best-effort; don't fail if step 1 succeeded
+            if snap is None:
+                translated = self._translate(exc, ticker)
+                raise translated
+
+        # --- Step 3 (optional): FMP metrics for pe/profit_margin if key available ---
+        if os.getenv("FMP_API_KEY") and snap is not None:
+            try:
+                obbject = obb.equity.fundamental.metrics(symbol=ticker, provider="fmp")
+                df = obbject.to_df()
+                if df is not None and not df.empty:
+                    rec = df.iloc[0].to_dict()
+                    snap = FundamentalsSnapshot(
+                        ticker=snap.ticker,
+                        market_cap=snap.market_cap or rec.get("market_cap"),
+                        pe=rec.get("pe_ratio") or rec.get("pe"),
+                        dividend_yield=snap.dividend_yield,
+                        profit_margin=rec.get("net_profit_margin") or rec.get("profit_margin"),
+                        revenue_ttm=snap.revenue_ttm or rec.get("revenue"),
+                        sector=snap.sector,
+                        extras={**snap.extras, "openbb_fmp_metrics": rec},
+                    )
+            except Exception:  # noqa: BLE001
+                pass  # FMP enrichment is optional — proceed without
+
+        if snap is None:
+            raise _NotFoundError(f"openbb fundamentals unavailable for {ticker}")
+
+        return snap
 
     @staticmethod
     def _translate(exc: Exception, ticker: str) -> Exception:
