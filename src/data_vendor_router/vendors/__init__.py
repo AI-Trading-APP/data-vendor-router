@@ -74,6 +74,7 @@ _BUILTIN_ADAPTER_MODULES = (
     "alpha_vantage",
     "newsapi",
     "tiingo",
+    "openbb",
 )
 
 

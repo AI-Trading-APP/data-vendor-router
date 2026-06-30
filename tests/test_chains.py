@@ -2,8 +2,8 @@ from data_vendor_router.chains import DEFAULT_CHAINS, get_configured_chain
 
 
 def test_default_ohlcv_chain():
-    """DVR-3 / v0.1.3: polygon is primary; yfinance demoted to last (IP-blocked on VPS)."""
-    assert get_configured_chain("ohlcv") == ["polygon", "tiingo", "alpaca", "yfinance"]
+    """DVR-3 / v0.1.3: polygon primary; openbb at slot-4; yfinance last (IP-blocked on VPS)."""
+    assert get_configured_chain("ohlcv") == ["polygon", "tiingo", "alpaca", "openbb", "yfinance"]
 
 
 def test_default_ohlcv_chain_polygon_first():
@@ -24,7 +24,7 @@ def test_default_news_chain():
 
 
 def test_default_fundamentals_chain():
-    assert get_configured_chain("fundamentals") == ["yfinance", "alpha_vantage", "polygon"]
+    assert get_configured_chain("fundamentals") == ["yfinance", "alpha_vantage", "polygon", "openbb"]
 
 
 def test_unknown_category_returns_empty_list():
