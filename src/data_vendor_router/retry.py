@@ -18,7 +18,7 @@ from .exceptions import _NetworkError
 T = TypeVar("T")
 
 # Vendors that opt-in to retry-once-on-transient.
-RETRY_ON_TRANSIENT_VENDORS: set[str] = {"yfinance"}
+RETRY_ON_TRANSIENT_VENDORS: set[str] = {"yfinance", "openbb"}
 
 RETRY_BACKOFF_SECONDS = 0.1   # ≤ 100ms per spec
 
