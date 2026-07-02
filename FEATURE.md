@@ -51,6 +51,15 @@ burn the scarce quota. Dedup + cache = quota/cost protection.
   cross-process coalescing = P2 (in-process threading.Event P1), Redis DB index namespace, keep per-service L1 mem.
   NO genuine human gate (no paid tier, no prod go-live in scope). Proceeding to Phase 1 spec.
 
+
+- 2026-07-03 Resolved all feasibility-flagged "gates" as OWNED architecture decisions (none are real human gates):
+  (1) Redis namespace: use dedicated DB index /1 for DVR cache (namespace isolation from NPP/TIA on /0).
+  (2) TTL policy: OHLCV/quote 60s market / 15min off-hours; fundamentals 24h; news 5min. (architect finalizes in HLD)
+  (3) Coalescing: in-process threading.Event = P1; cross-process Redis NX = P2 (complexity deferred).
+  (4) Dead-yfinance market-index (Screener GAP-S2): route via DVR (polygon-first); drop yfinance path.
+  (5) Merge-order: openbb (0ed659f #7) ALREADY on `development` in DVR; our worktrees stack cleanly on it. NO conflict.
+  Both feasibility runs agreed: FEASIBLE, reuse-heavy, ZERO new infra, cache est. cuts vendor calls 70-90%.
+
 ## Next step
 Run pm-agent → spec.md (scope to approved P1/P2 gaps).
 
