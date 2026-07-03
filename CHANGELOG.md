@@ -3,6 +3,34 @@
 All notable changes to `data-vendor-router` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.2] — 2026-07-03
+
+Bugfix release — staging-proven P0: `pybreaker.CircuitBreakerError` leaked out of
+`_route` as an uncaught exception when a vendor's failure threshold was reached
+on the current call (the open-transition moment). The `breakers.is_open()` pre-check
+only covers already-open breakers; the mid-call transition was not handled. Staging
+trace: tiingo `_NetworkError` → pybreaker `on_failure` callback → `CircuitBreakerError:
+Failures threshold reached, circuit breaker opened` → uncaught → watchlist ASGI 500
+(2/10 calls per batch). Consumers must bump their pin to `>=0.2.2`.
+
+### Fixed
+
+- **`CircuitBreakerError` escape from `_route`** (`core.py`): Added
+  `except pybreaker.CircuitBreakerError` to the per-vendor except chain, placed
+  after `VendorResponseInvalid` (terminal) handlers so it cannot shadow DVR-internal
+  errors. On catch: records `(vendor_name, "circuit_breaker_open")` in `attempts`,
+  logs `WARNING dvr: vendor <name> circuit breaker tripped mid-call`, increments
+  `skip_count`, and `continue`s to the next vendor. All-vendors-exhausted path
+  produces `AllVendorsFailed` as expected.
+
+### Notes
+
+- No env var changes. No DB/migration changes. No new runtime dependencies.
+- `import pybreaker` added to `core.py` (already a runtime dep in `pyproject.toml`).
+- Consumers running `>=0.2.1` must pin to `>=0.2.2` to avoid the 500 regression.
+
 ## [0.2.1] — 2026-07-03
 
 Bugfix release — staging-proven P0 (DLD-18 FINDING-1): unregistered vendors in
@@ -30,6 +58,10 @@ no DB changes. Consumers must bump their pin to `>=0.2.1`.
   `"not_registered"` as the reason.
 - **`__version__` string** (`__init__.py`): Was stale at `"0.1.0"` since the
   0.2.0 release. Now reads `"0.2.1"`.
+- **OpenBB PyPI pin** (`pyproject.toml`): Corrected `[openbb]` extras — `openbb-core>=1.4,<2.0`
+  (was `>=4.3,<5.0`, matched zero PyPI releases); dropped unmaintained `openbb-polygon`;
+  added `openbb-equity>=1.4,<2.0` (required for `obb.equity` at runtime).
+  (Landed on `development` at 43b8cbf, before the 0.2.1 tag — ships in 0.2.1.)
 
 ### Added
 
@@ -42,39 +74,6 @@ no DB changes. Consumers must bump their pin to `>=0.2.1`.
 ### Notes
 
 - No env var changes. No DB/migration changes. No new dependencies.
-- OpenBB PyPI pin corrections from the [Unreleased] section are rolled into
-  this release.
-
-## [Unreleased]
-
-## [0.2.2] — 2026-07-03
-
-Bugfix release — staging-proven P0: `pybreaker.CircuitBreakerError` leaked out of
-`_route` as an uncaught exception when a vendor's failure threshold was reached
-on the current call (the open-transition moment). The `breakers.is_open()` pre-check
-only covers already-open breakers; the mid-call transition was not handled. Staging
-trace: tiingo `_NetworkError` → pybreaker `on_failure` callback → `CircuitBreakerError:
-Failures threshold reached, circuit breaker opened` → uncaught → watchlist ASGI 500
-(2/10 calls per batch). Consumers must bump their pin to `>=0.2.2`.
-
-### Fixed
-
-- **`CircuitBreakerError` escape from `_route`** (`core.py`): Added
-  `except pybreaker.CircuitBreakerError` to the per-vendor except chain, placed
-  after `VendorResponseInvalid` (terminal) handlers so it cannot shadow DVR-internal
-  errors. On catch: records `(vendor_name, "circuit_breaker_open")` in `attempts`,
-  logs `WARNING dvr: vendor <name> circuit breaker tripped mid-call`, increments
-  `skip_count`, and `continue`s to the next vendor. All-vendors-exhausted path
-  produces `AllVendorsFailed` as expected.
-- **OpenBB PyPI pin** (`pyproject.toml`): Corrected `[openbb]` extras — `openbb-core>=1.4,<2.0`
-  (was `>=4.3,<5.0`, matched zero PyPI releases); dropped unmaintained `openbb-polygon`;
-  added `openbb-equity>=1.4,<2.0` (required for `obb.equity` at runtime).
-
-### Notes
-
-- No env var changes. No DB/migration changes. No new runtime dependencies.
-- `import pybreaker` added to `core.py` (already a runtime dep in `pyproject.toml`).
-- Consumers running `>=0.2.1` must pin to `>=0.2.2` to avoid the 500 regression.
 
 ## [0.2.0] — 2026-07-03
 
