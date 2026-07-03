@@ -47,17 +47,34 @@ no DB changes. Consumers must bump their pin to `>=0.2.1`.
 
 ## [Unreleased]
 
+## [0.2.2] — 2026-07-03
+
+Bugfix release — staging-proven P0: `pybreaker.CircuitBreakerError` leaked out of
+`_route` as an uncaught exception when a vendor's failure threshold was reached
+on the current call (the open-transition moment). The `breakers.is_open()` pre-check
+only covers already-open breakers; the mid-call transition was not handled. Staging
+trace: tiingo `_NetworkError` → pybreaker `on_failure` callback → `CircuitBreakerError:
+Failures threshold reached, circuit breaker opened` → uncaught → watchlist ASGI 500
+(2/10 calls per batch). Consumers must bump their pin to `>=0.2.2`.
+
 ### Fixed
 
-- Corrected OpenBB PyPI pin in `[openbb]` extras: `openbb-core>=1.4,<2.0` (was
-  `>=4.3,<5.0`, which matched zero releases on PyPI and caused `pip install
-  data-vendor-router[openbb]` to fail with "No matching distribution found").
-- Dropped `openbb-polygon` from `[openbb]` extras: the openbb-polygon extension
-  targets the Polygon.io API that was rebranded as Massive and is unmaintained;
-  the DVR native `polygon.py` adapter at chain slot 1 covers Polygon directly.
-- Added `openbb-equity>=1.4,<2.0` to `[openbb]` extras: the `/equity` router is
-  its own PyPI package (`openbb-equity`); without it `obb.equity` is absent at
-  runtime and `get_ohlcv`/`get_fundamentals` fail with `AttributeError` at slot 4.
+- **`CircuitBreakerError` escape from `_route`** (`core.py`): Added
+  `except pybreaker.CircuitBreakerError` to the per-vendor except chain, placed
+  after `VendorResponseInvalid` (terminal) handlers so it cannot shadow DVR-internal
+  errors. On catch: records `(vendor_name, "circuit_breaker_open")` in `attempts`,
+  logs `WARNING dvr: vendor <name> circuit breaker tripped mid-call`, increments
+  `skip_count`, and `continue`s to the next vendor. All-vendors-exhausted path
+  produces `AllVendorsFailed` as expected.
+- **OpenBB PyPI pin** (`pyproject.toml`): Corrected `[openbb]` extras — `openbb-core>=1.4,<2.0`
+  (was `>=4.3,<5.0`, matched zero PyPI releases); dropped unmaintained `openbb-polygon`;
+  added `openbb-equity>=1.4,<2.0` (required for `obb.equity` at runtime).
+
+### Notes
+
+- No env var changes. No DB/migration changes. No new runtime dependencies.
+- `import pybreaker` added to `core.py` (already a runtime dep in `pyproject.toml`).
+- Consumers running `>=0.2.1` must pin to `>=0.2.2` to avoid the 500 regression.
 
 ## [0.2.0] — 2026-07-03
 

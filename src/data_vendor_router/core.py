@@ -23,6 +23,8 @@ import time
 from datetime import date
 from typing import Any
 
+import pybreaker
+
 from . import breakers, observability, vendors
 from .cache import get_dvr_cache
 from .chains import get_configured_chain
@@ -209,6 +211,23 @@ def _route(
                     v_record["outcome"] = "dto_validation_failed"
                     v_record["latency_ms"] = int((time.perf_counter() - v_started) * 1000)
                     raise
+                except pybreaker.CircuitBreakerError:
+                    # pybreaker raises CircuitBreakerError (not the underlying vendor error)
+                    # when the failure threshold is reached and the breaker transitions to
+                    # open on THIS call.  The pre-check (breakers.is_open) covers already-open
+                    # breakers, but not the open-transition moment — this clause closes that
+                    # gap.  Staging trace: tiingo _NetworkError → on_failure callback →
+                    # CircuitBreakerError leaked as HTTP 500 (watchlist 2/10 500s, 2026-07-03).
+                    v_record["outcome"] = "circuit_breaker_open"
+                    v_record["latency_ms"] = int((time.perf_counter() - v_started) * 1000)
+                    attempts.append((vendor_name, "circuit_breaker_open"))
+                    logger.warning(
+                        "dvr: vendor %r circuit breaker tripped mid-call (threshold reached), "
+                        "skipping to next vendor",
+                        vendor_name,
+                    )
+                    root_record["skip_count"] += 1
+                    continue
 
                 v_record["outcome"] = "success"
                 v_record["latency_ms"] = int((time.perf_counter() - v_started) * 1000)
