@@ -16,10 +16,10 @@ from __future__ import annotations
 
 import logging
 import os
-import re
 import time
 from datetime import datetime
 from typing import Any
+from urllib.parse import parse_qsl, urlencode, urlunsplit, urlsplit
 from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
@@ -259,19 +259,34 @@ class DVRCache:
         if self._client is None:
             try:
                 url = os.environ.get("CACHE_REDIS_URL", "redis://redis:6379")
-                # F1: redis-py honours the /db path in the URL and URL kwargs
-                # WIN over positional db= when both are supplied — so
-                # CACHE_REDIS_URL=redis://host/0 would silently land keys in
-                # DB 0 alongside app keys.  Strip any trailing /<digits> path
-                # from the URL first, then pass db=1 authoritatively (EC-7,
-                # NFR-4).
-                sanitised_url = re.sub(r"/\d+$", "", url.rstrip("/"))
-                if sanitised_url != url.rstrip("/"):
+                # F1: redis-py's parse_url() honours BOTH the URL path (/0)
+                # AND a `?db=0` query param, and both win over a db= kwarg
+                # passed to from_url().  Two missed cases from the regex fix:
+                #   (1) redis://host:6379/0?socket_timeout=1  (path + query)
+                #   (2) redis://host:6379?db=0                (db in query)
+                # Fix: use urllib.parse to surgically strip the path component
+                # and remove any `db` query param (preserving other params),
+                # then reassemble.  Always pass db=1 kwarg authoritatively
+                # (EC-7, NFR-4).
+                parts = urlsplit(url)
+                stripped_path = parts.path.lstrip("/")  # e.g. "0" or ""
+                qs_pairs = [(k, v) for k, v in parse_qsl(parts.query) if k != "db"]
+                db_in_query = any(k == "db" for k, _ in parse_qsl(parts.query))
+                sanitised_url = urlunsplit((
+                    parts.scheme,
+                    parts.netloc,
+                    "",                     # drop the /N path entirely
+                    urlencode(qs_pairs),    # query sans ?db=
+                    "",                     # no fragment
+                ))
+                if stripped_path.isdigit() or db_in_query:
                     logger.warning(
-                        "DVRCache: CACHE_REDIS_URL %r specifies a DB path that "
-                        "would override the required DB 1 — ignoring URL path "
-                        "and forcing db=1 (F1/EC-7).",
+                        "DVRCache: CACHE_REDIS_URL %r encodes a DB selector "
+                        "(path=%r, db-in-query=%s) that would override the "
+                        "required DB 1 — stripping and forcing db=1 (F1/EC-7).",
                         url,
+                        stripped_path,
+                        db_in_query,
                     )
                 self._client = _redis_module.Redis.from_url(
                     sanitised_url,
@@ -280,6 +295,16 @@ class DVRCache:
                     socket_timeout=2,
                     decode_responses=False,  # keep bytes for Pydantic JSON
                 )
+                # Belt-and-braces: verify the constructed pool actually targets
+                # DB 1 (catches any future redis-py parse_url quirks).
+                actual_db = self._client.connection_pool.connection_kwargs.get("db")
+                if actual_db != 1:
+                    logger.warning(
+                        "DVRCache: post-construction check found db=%r instead "
+                        "of 1 — forcing db=1 in connection_kwargs (F1/EC-7).",
+                        actual_db,
+                    )
+                    self._client.connection_pool.connection_kwargs["db"] = 1
             except Exception as exc:
                 self._record_error(exc)
                 return None

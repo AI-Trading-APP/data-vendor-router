@@ -341,6 +341,82 @@ def test_cache_redis_url_with_db0_path_still_uses_db1(monkeypatch):
     assert db0_client.keys("dvr:*") == [], "Keys must not appear on DB /0"
 
 
+def test_cache_redis_url_path_with_query_still_uses_db1(monkeypatch):
+    """redis://host:6379/0?socket_timeout=1 — path + other query params (F1 form 1).
+
+    The /0 path must be stripped; non-db query params (socket_timeout) must be
+    preserved; db=1 must be passed to from_url.
+    """
+    import fakeredis
+    import data_vendor_router.cache as cache_module
+
+    fake_server = fakeredis.FakeServer()
+    captured_kwargs: dict = {}
+
+    def _patched_from_url(url, **kwargs):
+        captured_kwargs.update(kwargs)
+        captured_kwargs["url"] = url
+        return fakeredis.FakeRedis(server=fake_server, db=kwargs.get("db", 1), decode_responses=False)
+
+    monkeypatch.setenv("CACHE_REDIS_URL", "redis://localhost:6379/0?socket_timeout=1")
+    monkeypatch.setattr(cache_module._redis_module.Redis, "from_url", staticmethod(_patched_from_url))
+
+    cache = DVRCache()
+    client = cache._client_or_none()
+
+    assert client is not None
+    url_used = captured_kwargs.get("url", "")
+    # Path /0 must be gone
+    from urllib.parse import urlsplit
+    parsed = urlsplit(url_used)
+    assert parsed.path == "", f"Path not stripped: {url_used!r}"
+    # db kwarg must be 1
+    assert captured_kwargs.get("db") == 1, f"Expected db=1, got {captured_kwargs.get('db')}"
+    # Keys stay off DB 0
+    bars = [_sample_ohlc_bar()]
+    cache.set("dvr:ohlcv:AAPL:s:e", bars, 60, "ohlcv")
+    db0 = fakeredis.FakeRedis(server=fake_server, db=0, decode_responses=False)
+    assert db0.keys("dvr:*") == [], "Keys must not appear on DB /0"
+
+
+def test_cache_redis_url_db_query_param_still_uses_db1(monkeypatch):
+    """redis://host:6379?db=0 — db as query param (F1 form 2).
+
+    redis-py parse_url honours ?db=0 and it wins over the db= kwarg.
+    The sanitiser must strip the db query param before from_url is called.
+    """
+    import fakeredis
+    import data_vendor_router.cache as cache_module
+    from urllib.parse import urlsplit, parse_qsl
+
+    fake_server = fakeredis.FakeServer()
+    captured_kwargs: dict = {}
+
+    def _patched_from_url(url, **kwargs):
+        captured_kwargs.update(kwargs)
+        captured_kwargs["url"] = url
+        return fakeredis.FakeRedis(server=fake_server, db=kwargs.get("db", 1), decode_responses=False)
+
+    monkeypatch.setenv("CACHE_REDIS_URL", "redis://localhost:6379?db=0")
+    monkeypatch.setattr(cache_module._redis_module.Redis, "from_url", staticmethod(_patched_from_url))
+
+    cache = DVRCache()
+    client = cache._client_or_none()
+
+    assert client is not None
+    url_used = captured_kwargs.get("url", "")
+    # ?db= must not appear in the sanitised URL
+    qs_keys = [k for k, _ in parse_qsl(urlsplit(url_used).query)]
+    assert "db" not in qs_keys, f"db still in query string: {url_used!r}"
+    # db kwarg must be 1
+    assert captured_kwargs.get("db") == 1, f"Expected db=1, got {captured_kwargs.get('db')}"
+    # Keys stay off DB 0
+    bars = [_sample_ohlc_bar()]
+    cache.set("dvr:ohlcv:AAPL:s:e", bars, 60, "ohlcv")
+    db0 = fakeredis.FakeRedis(server=fake_server, db=0, decode_responses=False)
+    assert db0.keys("dvr:*") == [], "Keys must not appear on DB /0"
+
+
 # ---------------------------------------------------------------------------
 # F2: DST-boundary test — zoneinfo gives correct ET offset in summer & winter
 # ---------------------------------------------------------------------------
