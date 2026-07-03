@@ -149,11 +149,16 @@ class OpenBBAdapter:
             df = obbject.to_df()
             if df is not None and not df.empty:
                 rec = df.iloc[0].to_dict()
+                # OpenBB equity.profile(provider="yfinance") returns dividend_yield as
+                # a PERCENT value (e.g. 0.38 for 0.38%).  DVR canonical unit is DECIMAL
+                # FRACTION (0.0038).  Divide by 100 to normalise; None passes through.
+                raw_div_yield = rec.get("dividend_yield")
+                div_yield = raw_div_yield / 100.0 if raw_div_yield is not None else None
                 snap = FundamentalsSnapshot(
                     ticker=ticker.upper(),
                     market_cap=rec.get("market_cap"),
                     pe=None,              # not available from profile
-                    dividend_yield=rec.get("dividend_yield"),
+                    dividend_yield=div_yield,
                     profit_margin=None,   # not available from profile
                     revenue_ttm=None,     # filled below from SEC income
                     sector=rec.get("sector"),

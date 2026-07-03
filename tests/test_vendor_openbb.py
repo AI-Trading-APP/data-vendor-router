@@ -327,7 +327,9 @@ class TestGetFundamentalsHappyPath:
         assert snap.market_cap == 2_800_000_000_000
         assert snap.sector == "Technology"
         assert snap.revenue_ttm == 60_000_000_000
-        assert snap.dividend_yield == 0.01
+        # OpenBB yfinance profile returns dividend_yield as PERCENT (0.01 = 0.01%).
+        # DVR canonical is DECIMAL FRACTION → expect 0.01 / 100 = 0.0001.
+        assert snap.dividend_yield == pytest.approx(0.0001, rel=1e-6)
         assert "openbb_profile" in snap.extras
         assert "openbb_sec_income" in snap.extras
 

@@ -80,8 +80,53 @@
 - Unresolved technical/business questions → adjudicated at the Phase-2 gate; record the decision log.
 
 ---
-### 14. API Contracts & Versioning *(project-required)*
-- URL-versioned `/api/v1`; OpenAPI 3.0 stub per endpoint (`specs/<feature>/openapi.yaml`); breaking change ⇒ version bump (old supported ≥2 sprints).
+### 14. FE-BE API Contracts *(mandatory — Phase-2 gate blocker)*
+
+> **This section must be complete before Phase-2 sign-off.** Frontend and backend tickets are
+> issued in parallel after the gate; the contract is the shared handshake that makes that safe.
+> Each contract is written here and extracted to `specs/<feature>/contracts/<endpoint-slug>.md`.
+> FE may start mock-coding as soon as "Contract frozen" is stamped. Any deviation during
+> implementation requires an explicit contract amendment + re-sign-off — not a silent change.
+
+#### 14a. Endpoint inventory
+
+For every new or changed endpoint, fill one row. No endpoint may be left TBD at sign-off.
+
+| # | Method | Path (`/api/v1/…`) | Auth | Request body (schema / fields) | Response (schema / fields) | Error codes | BE ticket | FE ticket | Contract frozen |
+|---|--------|--------------------|------|-------------------------------|----------------------------|-------------|-----------|-----------|-----------------|
+| 1 | | | | | | | | | |
+
+#### 14b. Shared type definitions
+
+List types/interfaces shared between FE and BE (TypeScript types, Python Pydantic models, or JSON Schema).
+These types are the canonical truth; both sides import/mirror them. Changes require sign-off.
+
+```
+// Example: shared type
+interface PredictionResult {
+  ticker: string;
+  direction: 'BUY' | 'SELL' | 'HOLD';
+  confidence: number;   // 0.0–1.0
+  generatedAt: string;  // ISO-8601
+}
+```
+
+#### 14c. Error envelope
+
+All endpoints return errors in this standard shape (fill in or reference the project standard):
+
+```json
+{ "error": { "code": "VALIDATION_ERROR", "message": "human-readable", "details": {} } }
+```
+
+#### 14d. Versioning & breaking-change policy
+- URL-versioned `/api/v1`; breaking change ⇒ version bump; old version supported ≥2 sprints.
+- A breaking change is: field removed/renamed, type narrowed, new required field, status code changed.
+- Non-breaking (additive): new optional field, new endpoint, new non-error status code.
+
+#### 14e. Contract files
+Extract each row of §14a into `specs/<feature>/contracts/<endpoint-slug>.md` after sign-off.
+The techlead-agent links each contract file in the relevant BE and FE tickets.
 
 ### 15. Service Resilience *(project-required)*
 - Per outbound call: circuit breaker, retry+backoff (max 3, jitter), timeout (5s default), bulkhead, fallback.
