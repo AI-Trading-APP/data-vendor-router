@@ -31,9 +31,10 @@ burn the scarce quota. Dedup + cache = quota/cost protection.
 | Phase | State |
 |-------|-------|
 | 0 Feasibility | DONE — FEASIBLE (reuse-heavy, no new infra) |
-| 1 Spec | pending |
-| 2 Design+roadmap | pending |
-| 3 Implement | pending |
+| 1 Spec | DONE (spec.md signed off, US-1..US-9 P1) |
+| 2 Design+roadmap | DONE (design.md + roadmap.md, ADR-1 approved) |
+| 3 Implement PR-1 | **IN PROGRESS** — DLD-1..DLD-4 COMPLETE; DLD-5 (staging deploy + v0.2.0 tag) PENDING |
+| 3 Implement PR-2..PR-5 | Blocked on DLD-5 (v0.2.0 tag gate) |
 | 4 DoD | pending |
 | Deploy staging | pending |
 
@@ -60,9 +61,22 @@ burn the scarce quota. Dedup + cache = quota/cost protection.
   (5) Merge-order: openbb (0ed659f #7) ALREADY on `development` in DVR; our worktrees stack cleanly on it. NO conflict.
   Both feasibility runs agreed: FEASIBLE, reuse-heavy, ZERO new infra, cache est. cuts vendor calls 70-90%.
 
-## Next step
-Run pm-agent → spec.md (scope to approved P1/P2 gaps).
+## PR-1 implementation log (2026-07-03)
+DLD-1 (cache.py): dd2692a — DVRCache, _ttl_for, _cache_key, get_dvr_cache() singleton.
+DLD-2 (core.py + observability.py): 0972118 — cache read/write-through in _route,
+  dvr_cache_hits_total + dvr_cache_misses_total counters, dvr.cache_hit span attribute.
+DLD-3 (pyproject + README + CHANGELOG): be9c55c — version 0.2.0, [cache] extra, doc-drift sweep.
+DLD-4 (tests): 2806001 — 22 unit tests (test_cache.py) + 8 integration tests (test_core_cache.py).
+Gate-1 result: 162 passed, 1 skipped (live_vendor), 0 failed — local Python 3.9.6 / system pip.
+
+## Next step (RESUME HERE)
+DLD-5: merge PR-1 to development, deploy DVR library to ktrading-test via consumer service
+redeploy (any DVR consumer), pip install data-vendor-router[cache]>=0.2.0,<0.3.0, set
+DVR_CACHE_ENABLED=true (committed to start.sh), run two sequential curl calls, confirm
+redis-cli -n 1 keys "dvr:*" has entries and redis-cli -n 0 keys "dvr:*" returns nothing,
+then tag v0.2.0 on development HEAD. After that PR-2..PR-5 (straggler services) can proceed
+in parallel.
 
 ## Where to resume
-Fresh session: read this file + `git -C data-vendor-router log development..HEAD` +
-specs/data-layer-dedup/*.md. Do NOT re-derive audit — memory project-external-data-dedup-audit.md.
+Fresh session: read this file + `git log` on feature/data-layer-dedup branch.
+Specs at specs/data-layer-dedup/. Do NOT re-derive — memory project-external-data-dedup-audit.md.
