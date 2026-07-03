@@ -53,6 +53,79 @@ Override per category via env var:
 export DVR_OHLCV_PRIORITY="alpaca,polygon,yfinance"
 ```
 
+## Cache layer (v0.2.0+)
+
+DVR optionally fronts all vendor calls with a shared Redis read-through cache so
+that every consuming service benefits from data fetched by any other service.
+
+### Install
+
+```bash
+pip install data-vendor-router[cache]
+```
+
+### Environment variables
+
+| Variable | Default | Description |
+|---|---|---|
+| `DVR_CACHE_ENABLED` | *(unset / off)* | Set to `true` / `1` to activate the cache. When off, behaviour is byte-equivalent to v0.1.x (no Redis client constructed). |
+| `CACHE_REDIS_URL` | `redis://redis:6379` | Redis connection URL. DVR always uses **DB /1**; the platform uses DB /0 so there is no key collision. |
+
+### Key schema (Redis DB /1)
+
+```
+dvr:ohlcv:{TICKER}:{start_iso}:{end_iso}
+dvr:fundamentals:{TICKER}
+dvr:news:{TICKER}:{lookback_days}:{top_n}
+```
+
+Ticker is always upper-cased.
+
+> **Known limitation (F3 — follow-up):** The cache key is built from the
+> effective date-range / lookback parameters only — it does NOT include the
+> `provider_chain` kwarg.  A call with an explicitly-pinned `provider_chain`
+> (e.g. `get_ohlcv("AAPL", ..., provider_chain=["polygon"])`) may be served
+> data that was cached by a default-chain call (or vice versa).  This is an
+> accepted design trade-off for P1 (cross-service dedup benefit outweighs the
+> edge case); a `provider_chain`-aware key variant is tracked as a follow-up
+> ticket (DLD-follow-F3).
+
+### TTL policy
+
+| Category | During market hours (09:30–16:00 ET, weekday) | Off-hours / weekend |
+|---|---|---|
+| `ohlcv` | 60 s | 900 s (15 min) |
+| `fundamentals` | 86 400 s (24 h) | 86 400 s |
+| `news` | 300 s (5 min) | 300 s |
+
+### Fail-open guarantee
+
+Any Redis error (connection refused, timeout, missing `[cache]` extra) is
+**swallowed** — the cache is bypassed and the vendor chain runs exactly as in
+v0.1.x. A Redis outage never breaks data fetches.
+
+### Observability
+
+Two new Prometheus counters are emitted when the flag is on:
+
+- `dvr_cache_hits_total{category}` — incremented on a cache hit (no vendor call).
+- `dvr_cache_misses_total{category}` — incremented on a cache miss before a vendor call.
+
+The root OTel span gains a `dvr.cache_hit` attribute (`true` / `false`) when the flag is on.
+
+### Staging setup
+
+```bash
+# In the consumer service's start.sh (committed — never a hand-edit on the box):
+export DVR_CACHE_ENABLED="${DVR_CACHE_ENABLED:-false}"
+export CACHE_REDIS_URL="${CACHE_REDIS_URL:-redis://redis:6379}"
+```
+
+Set `DVR_CACHE_ENABLED=true` in the staging deployment script to activate on ktrading-test.
+Production stays off until an explicit owner decision.
+
+---
+
 ## Run tests
 
 ```bash

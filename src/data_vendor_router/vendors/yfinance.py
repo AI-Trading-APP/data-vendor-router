@@ -15,7 +15,6 @@ from ..exceptions import (
     VendorResponseInvalid,
     _NetworkError,
     _NotFoundError,
-    _RateLimitError,
 )
 from . import register_adapter
 
