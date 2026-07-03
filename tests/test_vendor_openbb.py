@@ -212,16 +212,19 @@ class TestSchemaCanaryDrift:
                     adapter.get_ohlcv("AAPL", date(2026, 4, 1), date(2026, 4, 1))
 
 
-class TestOhlcvFmpFailsThenPolygon:
-    def test_ohlcv_fmp_fails_then_polygon(self):
-        """EC-2: fmp raises network exc, polygon returns df -> bars returned (internal fallback)."""
-        good_df = _make_ohlcv_df(rows=1)
-        call_count = [0]
+class TestOhlcvUsesOnlyFmp:
+    def test_ohlcv_uses_only_fmp_provider(self):
+        """Fix openbb-pypi-pins: openbb-polygon dropped; adapter must call provider='fmp' only.
 
-        def side_effect(**kwargs):
-            call_count[0] += 1
-            if kwargs.get("provider") == "fmp":
-                raise ConnectionError("fmp network failure")
+        After the pin-fix (openbb-polygon removed from extras), the adapter must NOT attempt
+        provider='polygon' through OpenBB — the DVR native polygon.py handles Polygon at chain
+        slot 1. This test asserts exactly one call is made and it uses provider='fmp'.
+        """
+        good_df = _make_ohlcv_df(rows=1)
+        calls = []
+
+        def side_effect(*args, **kwargs):
+            calls.append(kwargs.get("provider"))
             return _make_obbject(good_df)
 
         fake_obb = MagicMock()
@@ -239,7 +242,7 @@ class TestOhlcvFmpFailsThenPolygon:
                 bars = adapter.get_ohlcv("AAPL", date(2026, 4, 1), date(2026, 4, 1))
 
         assert len(bars) >= 1
-        assert call_count[0] == 2  # fmp tried first, then polygon
+        assert calls == ["fmp"], f"expected only ['fmp'], got {calls}"  # no polygon via OpenBB
 
 
 class TestGetFundamentalsHappyPath:

@@ -27,12 +27,10 @@ cache = [
     "redis>=5.0.0,<6.0.0",
 ]
 openbb = [
-    "openbb-core>=4.3,<5.0",
+    "openbb-core>=1.4,<2.0",
     "openbb-fmp",
-    "openbb-polygon",
     "openbb-sec",
-    # P2 (add when build-out lands):
-    # "openbb-fred",
+    "openbb-fred",
 ]
 dev = [
     "pytest>=7.0",

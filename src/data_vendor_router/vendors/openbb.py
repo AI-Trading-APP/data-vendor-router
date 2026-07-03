@@ -1,6 +1,10 @@
 """OpenBB Platform adapter — OHLCV + Fundamentals (P1), Macro + News (P2).
 
-Free MIT SDK. OHLCV via FMP/Polygon keys we hold; fundamentals via SEC EDGAR (free).
+Free MIT SDK. OHLCV via FMP key we hold; fundamentals via SEC EDGAR (free) then FMP.
+openbb-polygon is NOT used here — the DVR native polygon.py adapter (chain slot 1) already
+covers Polygon directly and is proven stable. openbb-polygon was removed because Polygon.io was
+acquired/rebranded as Massive and the openbb-polygon extension is unmaintained against the
+current Polygon API.
 Credentials injected from env (NO ~/.openbb_platform/user_settings.json — VPS headless).
 `obb` is lazy-imported inside methods (NFR-1 cold-start). Module import is guarded so
 register_all_available() silent-skips when the [openbb] extras are absent (NFR-4 / US-4).
@@ -48,24 +52,20 @@ class OpenBBAdapter:
 
     def get_ohlcv(self, ticker: str, start: date, end: date) -> list[OHLCBar]:
         from openbb import obb
-        last_exc = None
-        for provider in ("fmp", "polygon"):  # spec: fmp then polygon
-            try:
-                obbject = obb.equity.price.historical(
-                    symbol=ticker,          # EC-6: pass as-is, no reformat
-                    start_date=start.isoformat(),
-                    end_date=end.isoformat(),
-                    provider=provider,
-                )
-                return self._obbject_to_bars(obbject, ticker)
-            except (_NotFoundError, VendorResponseInvalid):
-                raise  # terminal — don't try next provider
-            except Exception as exc:  # noqa: BLE001
-                last_exc = self._translate(exc, ticker)
-                if isinstance(last_exc, _NotFoundError):
-                    raise last_exc
-                continue  # EC-2: try polygon
-        raise last_exc or _NetworkError(f"openbb: both providers failed for {ticker}")
+        # Use FMP only — openbb-polygon is dropped (Polygon rebranded to Massive;
+        # openbb-polygon extension unmaintained). DVR native polygon.py covers Polygon at slot 1.
+        try:
+            obbject = obb.equity.price.historical(
+                symbol=ticker,          # EC-6: pass as-is, no reformat
+                start_date=start.isoformat(),
+                end_date=end.isoformat(),
+                provider="fmp",
+            )
+            return self._obbject_to_bars(obbject, ticker)
+        except (_NotFoundError, VendorResponseInvalid):
+            raise  # terminal
+        except Exception as exc:  # noqa: BLE001
+            raise self._translate(exc, ticker) from exc
 
     def _obbject_to_bars(self, obbject, ticker: str) -> list[OHLCBar]:
         try:
