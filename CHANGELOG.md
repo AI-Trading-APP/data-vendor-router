@@ -3,6 +3,20 @@
 All notable changes to `data-vendor-router` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Fixed
+
+- Corrected OpenBB PyPI pin in `[openbb]` extras: `openbb-core>=1.4,<2.0` (was
+  `>=4.3,<5.0`, which matched zero releases on PyPI and caused `pip install
+  data-vendor-router[openbb]` to fail with "No matching distribution found").
+- Dropped `openbb-polygon` from `[openbb]` extras: the openbb-polygon extension
+  targets the Polygon.io API that was rebranded as Massive and is unmaintained;
+  the DVR native `polygon.py` adapter at chain slot 1 covers Polygon directly.
+- Added `openbb-equity>=1.4,<2.0` to `[openbb]` extras: the `/equity` router is
+  its own PyPI package (`openbb-equity`); without it `obb.equity` is absent at
+  runtime and `get_ohlcv`/`get_fundamentals` fail with `AttributeError` at slot 4.
+
 ## [0.2.0] — 2026-07-03
 
 Shared Redis read-through cache (data-layer-dedup P1, DLD-1..DLD-5). All

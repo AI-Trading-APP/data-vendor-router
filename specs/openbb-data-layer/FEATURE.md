@@ -54,7 +54,7 @@ DEVOPS-1 pipeline (clean-release-only §2a, off-platform VPS via Docker, NOT Git
 2. OHLCV via OpenBB→FMP then Polygon (keys held); fundamentals via OpenBB→SEC(free)+FMP; macro via FRED(free,P2).
 3. P1 INCLUDES SEC EDGAR fundamentals (built). P2 = FRED macro + news.
 4. AC errata get_adapter ValueError-not-KeyError handled via isinstance in tests; no code change.
-5. Packages openbb-core>=4.3,<5.0 + openbb-fmp/polygon/sec (P1); openbb-fred (P2). Not meta-package.
+5. Packages openbb-core>=1.4,<2.0 + openbb-equity>=1.4,<2.0 + openbb-fmp + openbb-sec + openbb-fred (P1, all now included); openbb-polygon REMOVED (unmaintained). Corrected 2026-07-03: openbb-core is 1.x not 4.x; openbb-equity is required for obb.equity to exist. Not meta-package.
 6. Creds via obb.user.credentials from env; lazy-import obb; module-level ImportError guard for silent-skip.
 7. Schema-canary missing OHLC cols -> VendorResponseInvalid. Pin openbb-core<5.0.
 8. Unit tests MOCK openbb (sys.modules) — real openbb packages only needed at VPS deploy.
