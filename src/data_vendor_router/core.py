@@ -7,12 +7,21 @@ Cache integration (P1 — data-layer-dedup): a read-through shared Redis cache
 (``DVRCache``) is injected at the top of ``_route`` when ``DVR_CACHE_ENABLED=true``.
 When the flag is off the code path is byte-equivalent to the pre-feature version
 (NFR-5, AC-9.1): no Redis client is constructed, no counters incremented.
+
+Unregistered-vendor skip (v0.2.1 — DLD-18 FINDING-1): vendors whose SDK is not
+installed are never registered (see vendors/__init__.py ``register_all_available``).
+When the DEFAULT configured chain names such a vendor, the router now skips it with
+a WARN log and records reason ``"not_registered"`` in the attempts list rather than
+letting ``get_adapter`` raise an uncaught ``ValueError`` that propagates as HTTP 500.
+Explicit ``provider_chain`` caller overrides retain their existing loud-error behaviour
+(MIN-3: unknown entry is a caller bug, not a missing SDK).
 """
 from __future__ import annotations
 
+import logging
 import time
 from datetime import date
-from typing import Any, Callable
+from typing import Any
 
 from . import breakers, observability, vendors
 from .cache import get_dvr_cache
@@ -30,6 +39,12 @@ from .exceptions import (
     _ServerError,
 )
 from .retry import with_retry
+
+logger = logging.getLogger(__name__)
+
+# Track which unregistered-vendor warnings have been emitted so each missing
+# SDK is logged exactly ONCE per process lifetime (avoids log floods on every call).
+_warned_unregistered: set[str] = set()
 
 
 def _route(
@@ -92,11 +107,36 @@ def _route(
                 root_record["cache_hit"] = True
                 observability.cache_hits_total.labels(category=category).inc()
                 root_record["total_latency_ms"] = int((time.perf_counter() - started) * 1000)
+                # AC-3.4: emit a pm2-visible structured log on every cache hit so
+                # operators can confirm cache activity without Prometheus.
+                logger.info(
+                    "dvr_cache_hit category=%s ticker=%s key=%s",
+                    category,
+                    ticker.upper(),
+                    _active_cache_key,
+                )
                 return cached_result
             # Miss — record and fall through to vendor chain
             observability.cache_misses_total.labels(category=category).inc()
 
         for vendor_name in chain:
+            # SKIP unregistered vendors on the DEFAULT chain (DLD-18 FINDING-1).
+            # Vendor SDKs that are not installed are never registered at import time
+            # (see vendors/__init__.py ``register_all_available``).  Treat them as a
+            # skip rather than letting get_adapter raise an uncaught ValueError.
+            # Explicit provider_chain overrides already validated above (MIN-3).
+            if provider_chain is None and not vendors.is_registered(vendor_name):
+                if vendor_name not in _warned_unregistered:
+                    logger.warning(
+                        "dvr: vendor %r not registered (SDK not installed?), skipping "
+                        "— install the vendor's extras or remove it from the chain",
+                        vendor_name,
+                    )
+                    _warned_unregistered.add(vendor_name)
+                root_record["skip_count"] += 1
+                attempts.append((vendor_name, "not_registered"))
+                continue
+
             # SKIP open breakers (REQ-DVR-004). Skips are NOT counted as fallbacks
             # in user-facing metrics, only in the trace.
             if breakers.is_open(vendor_name):
@@ -108,7 +148,20 @@ def _route(
                 v_started = time.perf_counter()
                 try:
                     breaker = breakers.get_breaker(vendor_name)
-                    adapter = vendors.get_adapter(vendor_name)
+                    # Belt-and-braces: catch ValueError from get_adapter on any
+                    # code path that reaches here with an unregistered vendor name
+                    # (e.g. a future caller path that bypasses the check above).
+                    try:
+                        adapter = vendors.get_adapter(vendor_name)
+                    except ValueError:
+                        logger.warning(
+                            "dvr: get_adapter(%r) raised ValueError unexpectedly — skipping vendor",
+                            vendor_name,
+                        )
+                        v_record["outcome"] = "not_registered"
+                        v_record["latency_ms"] = 0
+                        attempts.append((vendor_name, "not_registered"))
+                        continue
                     method = getattr(adapter, method_name)
                     # Retry happens INSIDE the breaker call — 1 retry = 1 breaker event (CTO M4)
                     wrapped = with_retry(vendor_name)(method)
