@@ -3,6 +3,48 @@
 All notable changes to `data-vendor-router` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.1] — 2026-07-03
+
+Bugfix release — staging-proven P0 (DLD-18 FINDING-1): unregistered vendors in
+the default chain caused uncaught `ValueError` → HTTP 500 when polygon + tiingo
+breakers were open (watchlistservice hit 8/10 500s on staging). No env changes,
+no DB changes. Consumers must bump their pin to `>=0.2.1`.
+
+### Fixed
+
+- **Unregistered-vendor skip in default chain** (`core.py`): When a vendor name
+  in the configured default chain has no installed SDK (e.g. `alpaca` without
+  `alpaca-py`), `vendors.get_adapter` raised `ValueError: Unknown vendor` which
+  was not caught by the per-vendor exception handlers and escaped to the consumer
+  as an HTTP 500. `_route` now checks `vendors.is_registered` before entering
+  the vendor span for default-chain vendors; unregistered vendors are skipped
+  with a one-time WARN log (`dvr: vendor 'alpaca' not registered…`) and recorded
+  in `attempts` as `("alpaca", "not_registered")` so `AllVendorsFailed` reporting
+  remains honest. The explicit `provider_chain` validation (MIN-3) is unchanged —
+  an unknown vendor in a caller-supplied chain remains a loud `ValueError`.
+- **Belt-and-braces `ValueError` catch** (`core.py`): Added a `try/except
+  ValueError` around `vendors.get_adapter` inside the vendor loop to guard any
+  future code path that reaches `get_adapter` with an unregistered vendor name
+  (e.g. a caller-supplied chain that somehow bypasses the upfront MIN-3 check).
+  On catch the vendor is skipped with a WARN log; `attempts` records
+  `"not_registered"` as the reason.
+- **`__version__` string** (`__init__.py`): Was stale at `"0.1.0"` since the
+  0.2.0 release. Now reads `"0.2.1"`.
+
+### Added
+
+- **Cache-hit INFO log** (`core.py`, AC-3.4 gap): On every Redis cache hit,
+  `_route` emits `logger.info("dvr_cache_hit category=… ticker=… key=…")` so
+  the pm2 log stream confirms cache activity without requiring Prometheus. The
+  log is emitted after `dvr_cache_hits_total` is incremented and before the
+  early return.
+
+### Notes
+
+- No env var changes. No DB/migration changes. No new dependencies.
+- OpenBB PyPI pin corrections from the [Unreleased] section are rolled into
+  this release.
+
 ## [Unreleased]
 
 ### Fixed

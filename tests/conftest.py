@@ -31,12 +31,19 @@ from data_vendor_router.exceptions import (
 
 @pytest.fixture(autouse=True)
 def reset_state():
-    """Each test starts with a clean adapter registry + closed breakers."""
+    """Each test starts with a clean adapter registry + closed breakers.
+
+    Also clears ``core._warned_unregistered`` so the once-per-process WARN
+    log fires deterministically in tests that check for it (v0.2.1).
+    """
+    from data_vendor_router import core as _core
     breakers.reset_all()
     vendors.reset_registry()
+    _core._warned_unregistered.clear()
     yield
     breakers.reset_all()
     vendors.reset_registry()
+    _core._warned_unregistered.clear()
 
 
 # ---------- Stub adapter ----------
