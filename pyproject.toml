@@ -28,6 +28,7 @@ cache = [
 ]
 openbb = [
     "openbb-core>=1.4,<2.0",
+    "openbb-equity>=1.4,<2.0",
     "openbb-fmp",
     "openbb-sec",
     "openbb-fred",

@@ -108,6 +108,11 @@ class OpenBBAdapter:
         from openbb import obb
         last_exc = None
         for provider in ("sec", "fmp"):  # spec: sec(free) then fmp
+            # INFO: "sec" is NOT a valid provider for obb.equity.fundamental.metrics;
+            # the loop raises on it and falls through to "fmp" on every call.
+            # openbb-sec covers filings (obb.equity.fundamental.income etc.), not metrics.
+            # Pre-existing behavior: the exception is caught below and last_exc set to fmp.
+            # No behavior change here — comment only (comment; no fix in this PR scope).
             try:
                 obbject = obb.equity.fundamental.metrics(symbol=ticker, provider=provider)
                 df = obbject.to_df()
