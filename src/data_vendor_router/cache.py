@@ -16,11 +16,15 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 import time
 from datetime import datetime
 from typing import Any
+from zoneinfo import ZoneInfo
 
 logger = logging.getLogger(__name__)
+
+_ET = ZoneInfo("America/New_York")
 
 # ---------------------------------------------------------------------------
 # Lazy Redis import guard — if the [cache] extra is not installed, the cache
@@ -58,28 +62,15 @@ _MARKET_CLOSE_M: int = 0
 def _is_market_hours(now: datetime) -> bool:
     """Return True if *now* falls within 09:30–16:00 ET on a weekday.
 
-    Uses an explicit US/Eastern tz-aware comparison (EC-6) — never VPS local time.
+    Uses stdlib ``zoneinfo`` (Python ≥ 3.11) for a DST-correct US/Eastern
+    conversion (EC-6) — never VPS local time, never a fixed UTC offset.
     ``now`` may be naive (assumed UTC) or tz-aware; either is converted to ET.
     """
-    try:
-        import pytz  # pytz is in the platform stack (pydantic-settings pulls it in)
+    from datetime import timezone as _tz
 
-        et = pytz.timezone("US/Eastern")
-        if now.tzinfo is None:
-            import pytz as _pytz
-
-            now = _pytz.utc.localize(now)
-        now_et = now.astimezone(et)
-    except ImportError:
-        # Fallback: treat UTC offset as ET (-5h) — acceptable last resort.
-        from datetime import timezone, timedelta
-
-        utc_offset = timedelta(hours=-5)
-        if now.tzinfo is None:
-            from datetime import timezone as _tz
-
-            now = now.replace(tzinfo=_tz.utc)
-        now_et = now.astimezone(timezone(utc_offset))
+    if now.tzinfo is None:
+        now = now.replace(tzinfo=_tz.utc)
+    now_et = now.astimezone(_ET)
 
     if now_et.weekday() >= 5:  # Saturday=5, Sunday=6
         return False
@@ -205,8 +196,12 @@ class DVRCache:
         # Deserialise
         adapter = _get_type_adapter(category)
         if adapter is None:
-            # Unknown category — return raw bytes so callers can decide.
-            return raw
+            # Unknown category — treat as a miss so callers never receive raw
+            # bytes they cannot interpret (F4, design §Serialisation).
+            logger.warning(
+                "DVRCache: unknown category %r for key=%r — treating as miss", category, key
+            )
+            return None
         try:
             return adapter.validate_json(raw)
         except Exception as exc:
@@ -264,8 +259,22 @@ class DVRCache:
         if self._client is None:
             try:
                 url = os.environ.get("CACHE_REDIS_URL", "redis://redis:6379")
+                # F1: redis-py honours the /db path in the URL and URL kwargs
+                # WIN over positional db= when both are supplied — so
+                # CACHE_REDIS_URL=redis://host/0 would silently land keys in
+                # DB 0 alongside app keys.  Strip any trailing /<digits> path
+                # from the URL first, then pass db=1 authoritatively (EC-7,
+                # NFR-4).
+                sanitised_url = re.sub(r"/\d+$", "", url.rstrip("/"))
+                if sanitised_url != url.rstrip("/"):
+                    logger.warning(
+                        "DVRCache: CACHE_REDIS_URL %r specifies a DB path that "
+                        "would override the required DB 1 — ignoring URL path "
+                        "and forcing db=1 (F1/EC-7).",
+                        url,
+                    )
                 self._client = _redis_module.Redis.from_url(
-                    url,
+                    sanitised_url,
                     db=1,
                     socket_connect_timeout=2,
                     socket_timeout=2,

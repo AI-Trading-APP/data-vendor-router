@@ -287,3 +287,105 @@ def test_error_backoff_skips_redis():
     # Second call within backoff — should NOT call client.get again
     cache.get("dvr:ohlcv:AAPL:s:e", "ohlcv")
     assert call_count == 1, "Expected backoff to skip Redis on second call"
+
+
+# ---------------------------------------------------------------------------
+# F1: DB isolation — URL with /0 path must still land keys on DB 1 (EC-7)
+# ---------------------------------------------------------------------------
+
+def test_cache_redis_url_with_db0_path_still_uses_db1(monkeypatch):
+    """CACHE_REDIS_URL=redis://host:6379/0 must not bypass DB /1 isolation (F1/EC-7).
+
+    Verifies that keys written via DVRCache are not visible on DB /0 even when
+    the URL carries a /0 path that redis-py would otherwise honour.
+    """
+    import fakeredis
+
+    fake_server = fakeredis.FakeServer()
+
+    # Patch Redis.from_url so that the sanitised URL (with /0 stripped) is used,
+    # and we can confirm the client actually targets DB 1.
+    original_from_url = None
+    captured_kwargs: dict = {}
+
+    import data_vendor_router.cache as cache_module
+
+    def _patched_from_url(url, **kwargs):
+        captured_kwargs.update(kwargs)
+        captured_kwargs["url"] = url
+        # Return a real FakeRedis on DB 1 so subsequent set/get work
+        return fakeredis.FakeRedis(server=fake_server, db=kwargs.get("db", 1), decode_responses=False)
+
+    monkeypatch.setenv("CACHE_REDIS_URL", "redis://localhost:6379/0")
+    monkeypatch.setattr(cache_module._redis_module.Redis, "from_url", staticmethod(_patched_from_url))
+
+    cache = DVRCache()
+    # Trigger lazy client construction
+    client = cache._client_or_none()
+
+    assert client is not None, "Expected a Redis client to be constructed"
+    # The URL passed to from_url must NOT contain /0
+    assert not captured_kwargs.get("url", "").endswith("/0"), (
+        f"URL passed to from_url still contains /0: {captured_kwargs.get('url')}"
+    )
+    # db kwarg must be 1
+    assert captured_kwargs.get("db") == 1, (
+        f"Expected db=1, got db={captured_kwargs.get('db')}"
+    )
+
+    # Write a key and confirm it is NOT visible on DB /0
+    bars = [_sample_ohlc_bar()]
+    cache.set("dvr:ohlcv:AAPL:s:e", bars, 60, "ohlcv")
+
+    db0_client = fakeredis.FakeRedis(server=fake_server, db=0, decode_responses=False)
+    assert db0_client.keys("dvr:*") == [], "Keys must not appear on DB /0"
+
+
+# ---------------------------------------------------------------------------
+# F2: DST-boundary test — zoneinfo gives correct ET offset in summer & winter
+# ---------------------------------------------------------------------------
+
+def test_is_market_hours_dst_summer():
+    """July 09:35 ET (UTC-4 DST) = 13:35 UTC — must be detected as market hours (F2)."""
+    # 2026-07-09 13:35 UTC = 09:35 America/New_York (EDT, UTC-4)
+    summer_utc = datetime(2026, 7, 9, 13, 35, tzinfo=timezone.utc)
+    assert _is_market_hours(summer_utc), (
+        "Expected 09:35 ET in July (DST active) to be within market hours"
+    )
+
+
+def test_is_market_hours_dst_winter():
+    """Same UTC wall-clock (13:35 UTC) in January = 08:35 ET (EST, UTC-5) — before open (F2)."""
+    # 2026-01-09 13:35 UTC = 08:35 America/New_York (EST, UTC-5) — before 09:30
+    winter_utc = datetime(2026, 1, 9, 13, 35, tzinfo=timezone.utc)
+    assert not _is_market_hours(winter_utc), (
+        "Expected 08:35 ET in January (DST inactive) to be BEFORE market hours"
+    )
+
+
+def test_is_market_hours_dst_winter_open():
+    """14:40 UTC in January = 09:40 ET (EST) — within market hours (F2)."""
+    # 2026-01-09 14:40 UTC = 09:40 America/New_York (EST, UTC-5) — after 09:30
+    winter_open_utc = datetime(2026, 1, 9, 14, 40, tzinfo=timezone.utc)
+    assert _is_market_hours(winter_open_utc), (
+        "Expected 09:40 ET in January (DST inactive) to be within market hours"
+    )
+
+
+# ---------------------------------------------------------------------------
+# F4: unknown category in get() returns None (miss), not raw bytes
+# ---------------------------------------------------------------------------
+
+def test_get_unknown_category_returns_none():
+    """get() for an unknown category must return None (miss), never raw bytes (F4)."""
+    fake_server = fakeredis.FakeServer()
+    cache = _make_cache_with_fake_redis(fake_server)
+
+    # Seed a raw value directly so there IS something in Redis for this key
+    raw_client = fakeredis.FakeRedis(server=fake_server, db=1, decode_responses=False)
+    raw_client.setex("dvr:custom:AAPL", 60, b'{"some":"data"}')
+
+    result = cache.get("dvr:custom:AAPL", "custom_unknown_category")
+    assert result is None, (
+        f"Expected None for unknown category, got {result!r}"
+    )

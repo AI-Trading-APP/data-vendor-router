@@ -70,11 +70,14 @@ def _route(
             # method_args = (ticker, start, end); start/end are positional
             return (str(method_args[1]), str(method_args[2]))
         if cat == "news":
-            return (kwargs.get("lookback_days", 7), kwargs.get("top_n", 10))
+            # Derive from the actual kwargs passed — no hard-coded defaults here
+            # so that a caller-supplied non-default value is reflected in the key.
+            return (kwargs.get("lookback_days"), kwargs.get("top_n"))
         return ()
 
     with observability.root_span(category, ticker) as root_record:
-        root_record["cache_hit"] = None  # None = flag off; True/False = flag on
+        # root_span initialises cache_hit=None already; the redundant assignment
+        # below was a nit found in review — removed.
 
         # ---- P1 Read-through cache check (data-layer-dedup, DLD-2) ----
         _cache = get_dvr_cache()

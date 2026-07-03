@@ -36,6 +36,9 @@ is byte-equivalent to v0.1.x behaviour (NFR-5).
 - `fakeredis>=2.0` added to `[dev]` extras for unit tests.
 - No schema changes. No new services. Zero new infra (reuses the Redis already
   on ktrading-test; DVR uses DB /1, platform services use DB /0 — isolated).
+- **F3 (known, design-accepted):** The cache key does not include `provider_chain`.
+  A per-call `provider_chain` override may be served cached data from a
+  default-chain response (or vice versa).  Tracked as follow-up DLD-follow-F3.
 
 ## [0.1.2] — 2026-05-30
 

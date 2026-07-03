@@ -81,6 +81,15 @@ dvr:news:{TICKER}:{lookback_days}:{top_n}
 
 Ticker is always upper-cased.
 
+> **Known limitation (F3 — follow-up):** The cache key is built from the
+> effective date-range / lookback parameters only — it does NOT include the
+> `provider_chain` kwarg.  A call with an explicitly-pinned `provider_chain`
+> (e.g. `get_ohlcv("AAPL", ..., provider_chain=["polygon"])`) may be served
+> data that was cached by a default-chain call (or vice versa).  This is an
+> accepted design trade-off for P1 (cross-service dedup benefit outweighs the
+> edge case); a `provider_chain`-aware key variant is tracked as a follow-up
+> ticket (DLD-follow-F3).
+
 ### TTL policy
 
 | Category | During market hours (09:30–16:00 ET, weekday) | Off-hours / weekend |
