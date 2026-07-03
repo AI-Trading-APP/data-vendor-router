@@ -3,6 +3,40 @@
 All notable changes to `data-vendor-router` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [0.2.0] — 2026-07-03
+
+Shared Redis read-through cache (data-layer-dedup P1, DLD-1..DLD-5). All
+changes are behind the `DVR_CACHE_ENABLED` feature flag — default off, which
+is byte-equivalent to v0.1.x behaviour (NFR-5).
+
+### Added
+
+- `src/data_vendor_router/cache.py` — `DVRCache` class: lazy Redis client
+  (DB /1), per-category TTLs (ohlcv 60s/900s, fundamentals 24h, news 5m),
+  Pydantic `TypeAdapter` JSON serialisation, fail-open on any Redis/serialisation
+  error, lazy-reconnect backoff (EC-1), market-hours tz-aware check (EC-6).
+- `[cache]` optional-dependency group: `redis>=5.0.0,<6.0.0`.
+- `DVR_CACHE_ENABLED` feature flag (default off); `CACHE_REDIS_URL` env var
+  (default `redis://redis:6379`, DVR uses DB /1).
+- Cache read-through injected at the top of `_route` (before the vendor loop);
+  write-through on every vendor success.
+- Two new Prometheus counters in `observability.py`:
+  `dvr_cache_hits_total{category}`, `dvr_cache_misses_total{category}`.
+- `dvr.cache_hit` OTel span attribute on the root span (True/False when flag on).
+- `tests/test_cache.py` — 12 unit tests covering hit/miss/TTL/fail-open/flag-off/
+  db-isolation/ticker-uppercasing paths.
+- `tests/test_core_cache.py` — 8 integration tests: hit skips vendor, miss calls
+  vendor + writes cache, flag-off regression, counter increments, span attribute,
+  Redis-down fail-open.
+
+### Notes
+
+- Consumers install with `pip install data-vendor-router[cache]` and set
+  `DVR_CACHE_ENABLED=true` (staging only for P1; prod flip is a later owner gate).
+- `fakeredis>=2.0` added to `[dev]` extras for unit tests.
+- No schema changes. No new services. Zero new infra (reuses the Redis already
+  on ktrading-test; DVR uses DB /1, platform services use DB /0 — isolated).
+
 ## [0.1.2] — 2026-05-30
 
 Seventh vendor adapter (`tiingo`) covering BOTH News and OHLCV — second
