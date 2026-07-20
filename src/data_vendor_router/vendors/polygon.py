@@ -38,10 +38,16 @@ class PolygonAdapter:
     def get_ohlcv(self, ticker: str, start: date, end: date) -> list[OHLCBar]:
         api_key = os.getenv("POLYGON_API_KEY", "")
         url = f"{POLYGON_BASE_URL}/v2/aggs/ticker/{ticker.upper()}/range/1/day/{start.isoformat()}/{end.isoformat()}"
-        params = {"apiKey": api_key, "adjusted": "true", "sort": "asc"}
+        # SECURITY: the API key MUST NOT be placed in the query string —
+        # httpx (and any proxy/log sink in the request path) logs the full
+        # request URL verbatim, which would leak the raw key. Polygon
+        # supports `Authorization: Bearer <key>` header auth; use that so
+        # the key never appears in the URL/query string at all.
+        params = {"adjusted": "true", "sort": "asc"}
+        headers = {"Authorization": f"Bearer {api_key}"}
         try:
             with httpx.Client(timeout=POLYGON_TIMEOUT) as client:
-                resp = client.get(url, params=params)
+                resp = client.get(url, params=params, headers=headers)
         except httpx.HTTPError as e:
             raise _NetworkError(f"polygon network error: {e}") from e
 
@@ -82,10 +88,13 @@ class PolygonAdapter:
     def get_fundamentals(self, ticker: str) -> FundamentalsSnapshot:
         api_key = os.getenv("POLYGON_API_KEY", "")
         url = f"{POLYGON_BASE_URL}/v3/reference/tickers/{ticker.upper()}"
-        params = {"apiKey": api_key}
+        # SECURITY: see get_ohlcv — key goes in the Authorization header,
+        # never in the query string, so it can't leak via URL logging.
+        params: dict[str, str] = {}
+        headers = {"Authorization": f"Bearer {api_key}"}
         try:
             with httpx.Client(timeout=POLYGON_TIMEOUT) as client:
-                resp = client.get(url, params=params)
+                resp = client.get(url, params=params, headers=headers)
         except httpx.HTTPError as e:
             raise _NetworkError(f"polygon network error: {e}") from e
 
