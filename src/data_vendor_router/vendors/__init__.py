@@ -8,7 +8,7 @@ from __future__ import annotations
 from datetime import date
 from typing import Any, Protocol, runtime_checkable
 
-from ..dto import FundamentalsSnapshot, NewsItem, OHLCBar
+from ..dto import FundamentalsSnapshot, NewsItem, OHLCBar, Quote
 
 
 @runtime_checkable
@@ -32,9 +32,43 @@ class FundamentalsProvider(Protocol):
     def get_fundamentals(self, ticker: str) -> FundamentalsSnapshot: ...
 
 
+@runtime_checkable
+class QuoteProvider(Protocol):
+    name: str
+
+    def get_quote(self, ticker: str) -> Quote | None: ...
+
+
 # ---------- Registry ----------
 
 _ADAPTERS: dict[str, Any] = {}
+
+# Quote is a separate, single-slot seam (WL-004-DVR-1) — MVP $0 default has no
+# quote vendor configured (vendor-gated, deferred), so there is no chain to
+# fall back through yet, unlike the OHLCV/news/fundamentals categories above.
+_QUOTE_PROVIDERS: dict[str, Any] = {}
+
+
+def register_quote_provider(name: str, provider: Any) -> None:
+    """Register a quote provider under its canonical name."""
+    _QUOTE_PROVIDERS[name] = provider
+
+
+def get_quote_provider(name: str) -> Any:
+    """Return the registered quote provider for `name`, or raise ValueError."""
+    if name not in _QUOTE_PROVIDERS:
+        raise ValueError(
+            f"Unknown quote provider: {name!r}; registered: {sorted(_QUOTE_PROVIDERS)}"
+        )
+    return _QUOTE_PROVIDERS[name]
+
+
+def is_quote_registered(name: str) -> bool:
+    return name in _QUOTE_PROVIDERS
+
+
+def list_registered_quote_providers() -> list[str]:
+    return sorted(_QUOTE_PROVIDERS)
 
 
 def register_adapter(name: str, adapter: Any) -> None:
@@ -56,8 +90,9 @@ def is_registered(name: str) -> bool:
 
 
 def reset_registry() -> None:
-    """Test helper — clear all registered adapters."""
+    """Test helper — clear all registered adapters (incl. quote providers)."""
     _ADAPTERS.clear()
+    _QUOTE_PROVIDERS.clear()
 
 
 def list_registered() -> list[str]:

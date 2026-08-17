@@ -28,6 +28,7 @@ import pybreaker
 from . import breakers, observability, vendors
 from .cache import get_dvr_cache
 from .chains import get_configured_chain
+from .dto import Quote
 from .exceptions import (
     AllVendorsFailed,
     BadRequest,
@@ -310,3 +311,27 @@ def get_fundamentals(
         method_args=(ticker,),
         method_kwargs={},
     )
+
+
+def get_quote(
+    ticker: str,
+    *,
+    provider_chain: list[str] | None = None,
+) -> Quote | None:
+    """Fetch a single-symbol bid/ask/last quote. WL-004-DVR-1.
+
+    MVP $0 default: no quote provider is registered (vendor-gated, deferred —
+    see chains.py "quote" has no DEFAULT_CHAINS entry), so this resolves an
+    empty chain and returns `None` cleanly — it never raises
+    NoVendorsConfigured like the other categories. Callers render nulls
+    (specs/watchlist-mvp/contracts/quote-bidask.md). Live vendor activation
+    is a config-only change (DVR_QUOTE_PRIORITY + a registered adapter) with
+    no caller-facing signature change.
+    """
+    chain = provider_chain if provider_chain is not None else get_configured_chain("quote")
+    for provider_name in chain:
+        if not vendors.is_quote_registered(provider_name):
+            continue
+        provider = vendors.get_quote_provider(provider_name)
+        return provider.get_quote(ticker)
+    return None
