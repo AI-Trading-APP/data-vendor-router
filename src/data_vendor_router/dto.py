@@ -35,6 +35,22 @@ class NewsItem(BaseModel):
     tickers: tuple[str, ...] = Field(default_factory=tuple)
 
 
+class Quote(BaseModel):
+    """Single-symbol bid/ask/last quote. WL-004-DVR-1.
+
+    All price fields are nullable — MVP $0 default has no quote vendor
+    configured, so `get_quote()` returns `None` and callers render nulls
+    (see specs/watchlist-mvp/contracts/quote-bidask.md).
+    """
+
+    model_config = ConfigDict(frozen=True)
+
+    ticker: str
+    bid: Optional[float] = None
+    ask: Optional[float] = None
+    last: Optional[float] = None
+
+
 class FundamentalsSnapshot(BaseModel):
     """Superset of common fundamentals fields. Vendor-specific extras via `extras` dict.
 
