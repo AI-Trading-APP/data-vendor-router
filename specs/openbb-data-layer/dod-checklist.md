@@ -134,7 +134,7 @@ These items CANNOT be verified at branch/unit stage and are NOT failures — the
 | Fundamentals chain | `chains.py:35` | `["yfinance","alpha_vantage","polygon","openbb"]` |
 | Retry wiring | `retry.py:21` | `{"yfinance","openbb"}` |
 | Registry wiring | `vendors/__init__.py:77` | `"openbb"` in `_BUILTIN_ADAPTER_MODULES` |
-| Extras group | `pyproject.toml:26-35` | `[openbb]` group with openbb-core>=1.4,<2.0 + openbb-equity>=1.4,<2.0 + fmp + sec + fred (corrected 2026-07-03: pin was >=4.3,<5.0 matching no PyPI releases; openbb-polygon dropped; openbb-equity added) |
+| Extras group | `pyproject.toml:26-33` | `[openbb]` group with openbb-core>=4.3,<5.0 + fmp + polygon + sec |
 | P2 scope creep check | diff for get_macro, get_news, MacroDataPoint, openbb-fred | Absent — P2 correctly excluded |
 | Lazy import | `vendors/openbb.py:39,50,108` | `from openbb import obb` inside `__init__` and methods, NOT module-level |
 | Protocol conformance | `test_isinstance_protocol` | OHLCVProvider + FundamentalsProvider both True |

@@ -2,6 +2,38 @@
 
 _Last updated: 2026-06-30 — Phases 0-4 DONE (built + 2-reviewer + DoD all GREEN). ONLY REMAINING = mechanical deploy + live VPS proof (DEVOPS-1). Resume LEAN in fresh session._
 
+---
+## CHECKPOINT 2026-06-30b (owner halted Docker testing; saved to resume fresh)
+
+**Self-heal happened after the "100% done" claim above — that claim was WRONG.** Deploy attempt found
+the OpenBB adapter was INERT/never ran: `pyproject.toml [openbb]` pinned `openbb-core>=4.3,<5.0` (IMPOSSIBLE
+— openbb-core is on the 1.x line = 1.6.13; umbrella `openbb` is 4.7.2). Bad pin broke pip resolution →
+`import openbb` ImportError → adapter silently skipped. Original feature code DID merge dev (squash
+`0ed659f`) → release (`26a44c6`) but is HARMLESS/inert there. Nothing live regressed.
+
+**FIX branch `feature/openbb-adapter-fix` @ `6ed53b4`** (off development, NOT pushed). Fixed pins
+(umbrella `openbb>=4.7` + providers 1.x; umbrella REQUIRED to build `obb.equity.*` namespace) + 3 real-SDK
+adapter bugs found by ACTUALLY running it in Docker: (a) `metrics(provider="sec")` REJECTED by real SDK →
+rewrote get_fundamentals to free `profile(yfinance)`[mcap/sector/divyield] + `income(sec)`[revenue], FMP
+metrics optional step-3; (b) `hasattr` guard before setattr polygon_api_key; (c) date-index handling.
+PROVEN free in Docker: AAPL revenue $416B via SEC, mcap $4.1T+sector via yfinance, OHLCV parse. v0.1.4,
++320 net LOC. **Independent 2-reviewer = PASS** (fresh Docker re-run, 142 tests 0-fail).
+
+**OPEN BUG — dividend_yield 100x (DIAGNOSED, NOT PATCHED in `6ed53b4`):** OpenBB profile returns
+dividend_yield as PERCENT (0.38); DVR canonical = DECIMAL FRACTION (0.0038, confirmed vs vendors/
+yfinance.py + alpha_vantage.py). Fix = /100 + unit-assert test + sweep other scale fields. Fix agent was
+STOPPED by owner before patching; no uncommitted edits (clean working tree).
+
+**RESUME order:** (1) apply dividend_yield /100 fix + test + scale sweep, commit [owner said STOP DOCKER
+TESTING — code-edit+commit; verify on VPS smoke unless Docker re-permitted]; (2) quick independent
+re-verify of that delta; (3) push → PR to development → merge → promote release → clean redeploy
+ktrading-test (`pip install "data-vendor-router[openbb]"`); (4) REAL AC-7 proof on box — free SEC+yfinance
+path needs NO key, OHLCV via FMP key on box (Polygon key MISSING on box = secrets item, route via FMP, not
+a blocker); yfinance-block is INTERMITTENT (was UP at proof) so frame as resilience, don't fake an outage;
+(5) independent dod-auditor on FIXED code; (6) PR-2 deferred FRED macro+news; then learning-promoter-agent.
+Do NOT run token-economist-agent.
+---
+
 ## What & why (plain English)
 Add the free, open-source **OpenBB Platform** Python library as one more market-data
 provider inside our existing data-vendor-router (DVR) fallback chain. Get real data on
@@ -54,7 +86,7 @@ DEVOPS-1 pipeline (clean-release-only §2a, off-platform VPS via Docker, NOT Git
 2. OHLCV via OpenBB→FMP then Polygon (keys held); fundamentals via OpenBB→SEC(free)+FMP; macro via FRED(free,P2).
 3. P1 INCLUDES SEC EDGAR fundamentals (built). P2 = FRED macro + news.
 4. AC errata get_adapter ValueError-not-KeyError handled via isinstance in tests; no code change.
-5. Packages openbb-core>=1.4,<2.0 + openbb-equity>=1.4,<2.0 + openbb-fmp + openbb-sec + openbb-fred (P1, all now included); openbb-polygon REMOVED (unmaintained). Corrected 2026-07-03: openbb-core is 1.x not 4.x; openbb-equity is required for obb.equity to exist. Not meta-package.
+5. Packages openbb-core>=4.3,<5.0 + openbb-fmp/polygon/sec (P1); openbb-fred (P2). Not meta-package.
 6. Creds via obb.user.credentials from env; lazy-import obb; module-level ImportError guard for silent-skip.
 7. Schema-canary missing OHLC cols -> VendorResponseInvalid. Pin openbb-core<5.0.
 8. Unit tests MOCK openbb (sys.modules) — real openbb packages only needed at VPS deploy.

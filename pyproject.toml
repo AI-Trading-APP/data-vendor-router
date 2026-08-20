@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-vendor-router"
-version = "0.2.2"
+version = "0.2.3"
 description = "Category-routed data-fetch with automatic per-vendor fallback (yfinance, Alpaca, Benzinga, Polygon, Alpha Vantage, NewsAPI, Tiingo, OpenBB)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -27,11 +27,12 @@ cache = [
     "redis>=5.0.0,<6.0.0",
 ]
 openbb = [
-    "openbb-core>=1.4,<2.0",
-    "openbb-equity>=1.4,<2.0",
-    "openbb-fmp",
-    "openbb-sec",
-    "openbb-fred",
+    "openbb>=4.7,<5.0",
+    "openbb-core>=1.6,<2.0",
+    "openbb-fmp>=1.6,<2.0",
+    "openbb-polygon>=1.5,<2.0",
+    "openbb-sec>=1.6,<2.0",
+    "openbb-yfinance>=1.6,<2.0",
 ]
 dev = [
     "pytest>=7.0",

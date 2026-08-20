@@ -28,19 +28,17 @@ Before development starts, two human-gate items from `design.md §11` must be re
 **Description:**
 Add the `[project.optional-dependencies]` group `openbb` to `pyproject.toml` with pinned packages:
 ```
-openbb-core>=1.4,<2.0    # corrected 2026-07-03: openbb-core is 1.x, not 4.x
-openbb-equity>=1.4,<2.0  # REQUIRED: /equity router is its own package
+openbb-core>=4.3,<5.0
 openbb-fmp
+openbb-polygon
 openbb-sec
-# openbb-polygon REMOVED: unmaintained after Polygon.io → Massive rebrand
-openbb-fred
 ```
-Bump `version` from current to `0.1.3`. Update the `description` field to include `openbb` in the vendor list. This matches design §5 edit#5 and satisfies NFR-3 (pin) and AC-3.1 (extras group). No code changes; no behavior change in base install.
+(`openbb-fred` is P2 — do NOT add it here.) Bump `version` from current to `0.1.3`. Update the `description` field to include `openbb` in the vendor list. This matches design §5 edit#5 and satisfies NFR-3 (pin) and AC-3.1 (extras group). No code changes; no behavior change in base install.
 
 **Dependencies:** none
 **Maps to:** US-3, AC-3.1, AC-3.2, NFR-3, NFR-4, NFR-5
 **Acceptance:**
-- `[openbb]` group present in `pyproject.toml` with the five packages listed above (core, equity, fmp, sec, fred)
+- `[openbb]` group present in `pyproject.toml` with the four packages listed above
 - `pip install data-vendor-router` (without `[openbb]`) succeeds in a clean venv with no openbb packages pulled
 - `version` bumped, `description` updated
 
@@ -167,7 +165,7 @@ Tests must use `@pytest.mark.no_live_vendor` (or equivalent skip tag) so the cer
 After P1 source tickets (BE-1, BE-2, BE-3, TEST-1) are reviewed and merged to `development`, promote `development → release` and deploy to ktrading-test from a clean `release` checkout per §2a (CLAUDE.md global protocol — `git fetch && git reset --hard origin/release`, no on-box edits).
 
 Deploy steps:
-1. On ktrading-test: `pip install "data-vendor-router[openbb]"` in the DVR venv (installs `openbb-core>=1.4,<2.0`, `openbb-equity>=1.4,<2.0`, `openbb-fmp`, `openbb-sec`, `openbb-fred`; note `openbb-polygon` removed — unmaintained)
+1. On ktrading-test: `pip install "data-vendor-router[openbb]"` in the DVR venv (installs `openbb-core`, `openbb-fmp`, `openbb-polygon`, `openbb-sec`)
 2. Confirm `FMP_API_KEY` and `POLYGON_API_KEY` are set in the VPS env (already present from polygon-curated-universe feature per project memory)
 3. Run control smoke (AC-7.2): `DVR_OHLCV_PRIORITY=yfinance python -c "import data_vendor_router as d; d.get_ohlcv('AAPL', ...)"` — must raise `AllVendorsFailed` (proves yfinance is dead, openbb result is not a no-op)
 4. Run primary smoke (AC-7.1): `DVR_OHLCV_PRIORITY=openbb python -c "..."` — must print non-zero bar count, exit 0

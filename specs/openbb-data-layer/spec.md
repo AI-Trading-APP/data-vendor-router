@@ -130,7 +130,7 @@ Then the call proceeds normally using env-injected credentials (verified on ktra
 **AC-3.1** (REQ-OBB-05)
 Given `pyproject.toml` is inspected,
 When the optional-dependency groups are listed,
-Then an `[openbb]` group exists containing at minimum `openbb-core>=1.4,<2.0`, `openbb-equity>=1.4,<2.0`, `openbb-fmp`, `openbb-sec`, and `openbb-fred` (note: `openbb-polygon` removed — unmaintained after Polygon.io → Massive rebrand; DVR native polygon.py covers Polygon at slot 1).
+Then an `[openbb]` group exists containing at minimum `openbb-core>=4.3,<5.0`, `openbb-fmp`, `openbb-polygon`, `openbb-sec`, and `openbb-fred`.
 
 **AC-3.2** (REQ-OBB-05)
 Given a clean virtual environment without the `[openbb]` extras installed,
@@ -230,7 +230,7 @@ Importing `data_vendor_router` at module load must not increase cold-start time 
 The OpenBB FMP provider usage must not exceed 300 requests/day on the free tier. The adapter must sit at chain slot 4 (higher-priority paid/free-tier vendors are tried first), minimising FMP hits via OpenBB. No dedicated rate-limit counter is required; slot position is the control.
 
 **NFR-3 — openbb-core version pin**
-`openbb-core` must be pinned `>=1.4,<2.0` in `pyproject.toml` (corrected from `>=4.3,<5.0` — `openbb-core` uses 1.x versioning, not 4.x; the old pin matched zero PyPI releases). A schema-canary assertion in `get_ohlcv` must raise a DVR internal exception (not crash) if the OBBject column schema diverges from expectations, ensuring a major OpenBB upgrade does not silently corrupt data.
+`openbb-core` must be pinned `>=4.3,<5.0` in `pyproject.toml`. A schema-canary assertion in `get_ohlcv` must raise a DVR internal exception (not crash) if the OBBject column schema diverges from expectations, ensuring a major OpenBB upgrade does not silently corrupt data.
 
 **NFR-4 — Graceful degradation (GAP-11)**
 If `openbb-core` is not installed, the DVR must behave identically to today (no `openbb` in chain, no error). Existing consumers must not experience any regression.
@@ -276,9 +276,8 @@ If `obb.economy.fred_series` returns an empty series (series exists but no data 
 | Dependency | Type | Notes |
 |---|---|---|
 | `data-vendor-router` DVR repo | Internal — code | All edits are in this repo. Branch: `feature/openbb-data-layer` off `development @ 61e4858`. |
-| `openbb-core>=1.4,<2.0` | External — Python package | MIT-licensed. Must be installed as `[openbb]` extras on VPS venv. (Pin corrected from `>=4.3,<5.0` — openbb-core uses 1.x versioning.) |
-| `openbb-equity>=1.4,<2.0` | External — Python package | The `/equity` router is its own PyPI package; without it `obb.equity` is absent at runtime. |
-| `openbb-fmp` | External — Python package | Uses FMP_API_KEY already held by the project. (`openbb-polygon` dropped — unmaintained post Polygon.io → Massive rebrand; DVR native polygon.py covers Polygon at slot 1.) |
+| `openbb-core>=4.3,<5.0` | External — Python package | MIT-licensed. Must be installed as `[openbb]` extras on VPS venv. |
+| `openbb-fmp`, `openbb-polygon` | External — Python packages | Use FMP_API_KEY / POLYGON_API_KEY already held by the project. |
 | `openbb-sec`, `openbb-fred` | External — Python packages | Free (no key required for basic usage; FRED key for higher rate limits). |
 | `FMP_API_KEY`, `POLYGON_API_KEY` in VPS env | Ops — secrets | Already present on ktrading-test from Polygon-curated-universe feature. No new secret provisioning. |
 | `FRED_API_KEY` in VPS env | Ops — secrets (P2) | Optional; FRED works without a key at reduced rate. Provision before P2 goes live. |
@@ -316,4 +315,4 @@ For completeness, the resolved decisions are:
 3. FRED macro = P2, not P1 — **confirmed**.
 4. Python ≥3.11 on VPS — **confirmed** (polygon-curated-universe runs there).
 5. P1 = OHLCV + SEC fundamentals; P2 = FRED macro + news — **confirmed**.
-6. Packages = `openbb-core>=1.4,<2.0 + openbb-equity>=1.4,<2.0 + openbb-fmp + openbb-sec + openbb-fred` (NOT meta-package; `openbb-polygon` removed — unmaintained) — **corrected 2026-07-03 per PR#9 review findings**.
+6. Packages = `openbb-core + openbb-sec + openbb-fred + openbb-fmp + openbb-polygon` (NOT meta-package) — **confirmed**.

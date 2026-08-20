@@ -346,23 +346,21 @@ import logging; logging.getLogger(__name__).info("openbb adapter registered")  #
 ```toml
 [project.optional-dependencies]
 openbb = [
-    "openbb-core>=1.4,<2.0",    # NFR-3 pin — schema canary backs this
-                                  # (corrected 2026-07-03: openbb-core uses 1.x, not 4.x;
-                                  #  >=4.3,<5.0 matched zero PyPI releases)
-    "openbb-equity>=1.4,<2.0",  # REQUIRED: /equity router is its own package;
-                                  # without it obb.equity raises AttributeError at runtime
+    "openbb-core>=4.3,<5.0",   # NFR-3 pin — schema canary backs this
     "openbb-fmp",
-    "openbb-sec",
-    "openbb-fred",
-    # openbb-polygon REMOVED: unmaintained after Polygon.io → Massive rebrand;
-    # DVR native polygon.py (slot 1) covers Polygon directly.
+    "openbb-polygon",
+    # P2 (add when build-out lands):
+    # "openbb-sec",
+    # "openbb-fred",
 ]
 ```
-> Corrected 2026-07-03 per PR#9 review: `openbb-core` version is 1.x (not 4.x);
-> `openbb-equity` added (the `/equity` router is its own PyPI package — FMP provider alone
-> does not install it); `openbb-polygon` removed (unmaintained). All other P1 packages
-> (`openbb-sec`, `openbb-fred`) remain. New files `vendors/openbb.py` and
-> `tests/test_vendor_openbb.py` are additions, not edits.
+> Spec AC-3.1 lists `openbb-sec`/`openbb-fred` in the `[openbb]` group. Since SEC
+> fundamentals is a P1 user story (US-5) but FRED is P2, **include `openbb-sec` in P1**
+> and gate `openbb-fred` to P2. If P1 ships OHLCV-only, `openbb-sec` moves to P2 with
+> fundamentals. Recommend: P1 = `openbb-core, openbb-fmp, openbb-polygon, openbb-sec`
+> (OHLCV + SEC fundamentals both in P1 per spec US-5). Decision deferred to sign-off
+> (see human-gate). New file `vendors/openbb.py` and `tests/test_vendor_openbb.py` are
+> additions, not edits.
 
 ---
 
@@ -400,7 +398,7 @@ ops/deploy step, not a unit test (`@pytest.mark.live_vendor` if added).
 |---|---|
 | NFR-1 cold-start ≤200ms | `obb` lazy-imported (`from openbb import obb` inside `__init__`/methods); module top-level only does a cheap `import openbb` presence probe. Fallback note in §4.2 if init-time import is too heavy → memoized `_ensure_creds()`. Measure `time python -c "import data_vendor_router"` on VPS before/after. |
 | NFR-2 FMP 300/day | Slot-4 chain position — polygon/tiingo/alpaca tried first; openbb→fmp only hit when they fail/breaker-open. No dedicated counter (spec: slot position is the control). |
-| NFR-3 version pin + canary | `openbb-core>=1.4,<2.0` + `openbb-equity>=1.4,<2.0` (corrected 2026-07-03; `>=4.3,<5.0` matched no PyPI releases); `_EXPECTED_OHLC_COLS` subset check raises `VendorResponseInvalid` on drift (AC-1.8 / EC-5). |
+| NFR-3 version pin + canary | `openbb-core>=4.3,<5.0`; `_EXPECTED_OHLC_COLS` subset check raises `VendorResponseInvalid` on drift (AC-1.8 / EC-5). |
 | NFR-4 graceful degradation | `[openbb]` is an optional extra; module-level `ImportError` → `register_all_available` silent-skips; base install + all existing consumers unchanged. |
 | NFR-5 $0 spend | Only FMP/Polygon keys already held; SEC/FRED free. No new subscription. |
 | NFR-6 retry transient | `"openbb"` ∈ `RETRY_ON_TRANSIENT_VENDORS` → one retry on `_NetworkError` inside the breaker call. |
