@@ -39,6 +39,19 @@ breaker_state_changes_total = Counter(
     labelnames=("vendor", "new_state"),
 )
 
+# Cache counters — data-layer-dedup P1 (DLD-2, AC-3.1/3.2)
+cache_hits_total = Counter(
+    "dvr_cache_hits_total",
+    "Cache hits by data category",
+    labelnames=("category",),
+)
+
+cache_misses_total = Counter(
+    "dvr_cache_misses_total",
+    "Cache misses by data category",
+    labelnames=("category",),
+)
+
 
 # ---------- OTel root + child span helpers ----------
 
@@ -56,6 +69,8 @@ def root_span(category: str, ticker: str) -> Iterator[dict[str, Any]]:
             "fallback_count": 0,
             "skip_count": 0,
             "total_latency_ms": 0,
+            # cache_hit: None = flag off; True = hit; False = miss+filled (DLD-2, AC-3.3)
+            "cache_hit": None,
         }
         span.set_attribute("dvr.category", category)
         span.set_attribute("dvr.ticker", ticker.upper())
@@ -67,6 +82,9 @@ def root_span(category: str, ticker: str) -> Iterator[dict[str, Any]]:
             span.set_attribute("dvr.fallback_count", record["fallback_count"])
             span.set_attribute("dvr.skip_count", record["skip_count"])
             span.set_attribute("dvr.total_latency_ms", record["total_latency_ms"])
+            # Emit cache_hit attribute only when the flag is on (AC-3.3)
+            if record["cache_hit"] is not None:
+                span.set_attribute("dvr.cache_hit", record["cache_hit"])
 
 
 @contextmanager

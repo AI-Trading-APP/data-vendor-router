@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "data-vendor-router"
-version = "0.1.4"
+version = "0.2.3"
 description = "Category-routed data-fetch with automatic per-vendor fallback (yfinance, Alpaca, Benzinga, Polygon, Alpha Vantage, NewsAPI, Tiingo, OpenBB)"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -23,17 +23,16 @@ vendors = [
     "yfinance>=0.2.40",
     "alpaca-py>=0.35",
 ]
+cache = [
+    "redis>=5.0.0,<6.0.0",
+]
 openbb = [
-    # Umbrella package required: it is versioned 4.x and triggers the SDK build step
-    # that wires providers into obb.equity.* etc. Provider sub-packages are 1.x (not 4.x).
     "openbb>=4.7,<5.0",
     "openbb-core>=1.6,<2.0",
     "openbb-fmp>=1.6,<2.0",
     "openbb-polygon>=1.5,<2.0",
     "openbb-sec>=1.6,<2.0",
     "openbb-yfinance>=1.6,<2.0",
-    # P2 (add when build-out lands):
-    # "openbb-fred>=1.6,<2.0",
 ]
 dev = [
     "pytest>=7.0",
@@ -42,6 +41,7 @@ dev = [
     "opentelemetry-sdk>=1.25",
     "ruff",
     "mypy>=1.10",
+    "fakeredis>=2.0",
 ]
 
 [tool.hatch.build.targets.wheel]

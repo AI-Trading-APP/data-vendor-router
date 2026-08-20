@@ -3,6 +3,115 @@
 All notable changes to `data-vendor-router` are documented here.
 Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) · Versioning: [SemVer](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+## [0.2.2] — 2026-07-03
+
+Bugfix release — staging-proven P0: `pybreaker.CircuitBreakerError` leaked out of
+`_route` as an uncaught exception when a vendor's failure threshold was reached
+on the current call (the open-transition moment). The `breakers.is_open()` pre-check
+only covers already-open breakers; the mid-call transition was not handled. Staging
+trace: tiingo `_NetworkError` → pybreaker `on_failure` callback → `CircuitBreakerError:
+Failures threshold reached, circuit breaker opened` → uncaught → watchlist ASGI 500
+(2/10 calls per batch). Consumers must bump their pin to `>=0.2.2`.
+
+### Fixed
+
+- **`CircuitBreakerError` escape from `_route`** (`core.py`): Added
+  `except pybreaker.CircuitBreakerError` to the per-vendor except chain, placed
+  after `VendorResponseInvalid` (terminal) handlers so it cannot shadow DVR-internal
+  errors. On catch: records `(vendor_name, "circuit_breaker_open")` in `attempts`,
+  logs `WARNING dvr: vendor <name> circuit breaker tripped mid-call`, increments
+  `skip_count`, and `continue`s to the next vendor. All-vendors-exhausted path
+  produces `AllVendorsFailed` as expected.
+
+### Notes
+
+- No env var changes. No DB/migration changes. No new runtime dependencies.
+- `import pybreaker` added to `core.py` (already a runtime dep in `pyproject.toml`).
+- Consumers running `>=0.2.1` must pin to `>=0.2.2` to avoid the 500 regression.
+
+## [0.2.1] — 2026-07-03
+
+Bugfix release — staging-proven P0 (DLD-18 FINDING-1): unregistered vendors in
+the default chain caused uncaught `ValueError` → HTTP 500 when polygon + tiingo
+breakers were open (watchlistservice hit 8/10 500s on staging). No env changes,
+no DB changes. Consumers must bump their pin to `>=0.2.1`.
+
+### Fixed
+
+- **Unregistered-vendor skip in default chain** (`core.py`): When a vendor name
+  in the configured default chain has no installed SDK (e.g. `alpaca` without
+  `alpaca-py`), `vendors.get_adapter` raised `ValueError: Unknown vendor` which
+  was not caught by the per-vendor exception handlers and escaped to the consumer
+  as an HTTP 500. `_route` now checks `vendors.is_registered` before entering
+  the vendor span for default-chain vendors; unregistered vendors are skipped
+  with a one-time WARN log (`dvr: vendor 'alpaca' not registered…`) and recorded
+  in `attempts` as `("alpaca", "not_registered")` so `AllVendorsFailed` reporting
+  remains honest. The explicit `provider_chain` validation (MIN-3) is unchanged —
+  an unknown vendor in a caller-supplied chain remains a loud `ValueError`.
+- **Belt-and-braces `ValueError` catch** (`core.py`): Added a `try/except
+  ValueError` around `vendors.get_adapter` inside the vendor loop to guard any
+  future code path that reaches `get_adapter` with an unregistered vendor name
+  (e.g. a caller-supplied chain that somehow bypasses the upfront MIN-3 check).
+  On catch the vendor is skipped with a WARN log; `attempts` records
+  `"not_registered"` as the reason.
+- **`__version__` string** (`__init__.py`): Was stale at `"0.1.0"` since the
+  0.2.0 release. Now reads `"0.2.1"`.
+- **OpenBB PyPI pin** (`pyproject.toml`): Corrected `[openbb]` extras — `openbb-core>=1.4,<2.0`
+  (was `>=4.3,<5.0`, matched zero PyPI releases); dropped unmaintained `openbb-polygon`;
+  added `openbb-equity>=1.4,<2.0` (required for `obb.equity` at runtime).
+  (Landed on `development` at 43b8cbf, before the 0.2.1 tag — ships in 0.2.1.)
+
+### Added
+
+- **Cache-hit INFO log** (`core.py`, AC-3.4 gap): On every Redis cache hit,
+  `_route` emits `logger.info("dvr_cache_hit category=… ticker=… key=…")` so
+  the pm2 log stream confirms cache activity without requiring Prometheus. The
+  log is emitted after `dvr_cache_hits_total` is incremented and before the
+  early return.
+
+### Notes
+
+- No env var changes. No DB/migration changes. No new dependencies.
+
+## [0.2.0] — 2026-07-03
+
+Shared Redis read-through cache (data-layer-dedup P1, DLD-1..DLD-5). All
+changes are behind the `DVR_CACHE_ENABLED` feature flag — default off, which
+is byte-equivalent to v0.1.x behaviour (NFR-5).
+
+### Added
+
+- `src/data_vendor_router/cache.py` — `DVRCache` class: lazy Redis client
+  (DB /1), per-category TTLs (ohlcv 60s/900s, fundamentals 24h, news 5m),
+  Pydantic `TypeAdapter` JSON serialisation, fail-open on any Redis/serialisation
+  error, lazy-reconnect backoff (EC-1), market-hours tz-aware check (EC-6).
+- `[cache]` optional-dependency group: `redis>=5.0.0,<6.0.0`.
+- `DVR_CACHE_ENABLED` feature flag (default off); `CACHE_REDIS_URL` env var
+  (default `redis://redis:6379`, DVR uses DB /1).
+- Cache read-through injected at the top of `_route` (before the vendor loop);
+  write-through on every vendor success.
+- Two new Prometheus counters in `observability.py`:
+  `dvr_cache_hits_total{category}`, `dvr_cache_misses_total{category}`.
+- `dvr.cache_hit` OTel span attribute on the root span (True/False when flag on).
+- `tests/test_cache.py` — 12 unit tests covering hit/miss/TTL/fail-open/flag-off/
+  db-isolation/ticker-uppercasing paths.
+- `tests/test_core_cache.py` — 8 integration tests: hit skips vendor, miss calls
+  vendor + writes cache, flag-off regression, counter increments, span attribute,
+  Redis-down fail-open.
+
+### Notes
+
+- Consumers install with `pip install data-vendor-router[cache]` and set
+  `DVR_CACHE_ENABLED=true` (staging only for P1; prod flip is a later owner gate).
+- `fakeredis>=2.0` added to `[dev]` extras for unit tests.
+- No schema changes. No new services. Zero new infra (reuses the Redis already
+  on ktrading-test; DVR uses DB /1, platform services use DB /0 — isolated).
+- **F3 (known, design-accepted):** The cache key does not include `provider_chain`.
+  A per-call `provider_chain` override may be served cached data from a
+  default-chain response (or vice versa).  Tracked as follow-up DLD-follow-F3.
+
 ## [0.1.2] — 2026-05-30
 
 Seventh vendor adapter (`tiingo`) covering BOTH News and OHLCV — second

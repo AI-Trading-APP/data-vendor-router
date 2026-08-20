@@ -129,3 +129,55 @@ def test_get_fundamentals_no_results_raises_not_found():
     with _patched_client_returns(_make_response(200, {})):
         with pytest.raises(_NotFoundError):
             adapter.get_fundamentals("NVDA")
+
+
+# ===== SECURITY regression: key in Authorization header, never in URL/query =====
+# httpx logs the full request URL; an apiKey query param would leak the raw key.
+# See vendors/polygon.py SECURITY comments (pe-ff-secret-redact).
+
+
+def _capture_get_call(monkeypatch, call_fn):
+    monkeypatch.setenv("POLYGON_API_KEY", "SECRET_KEY_123")
+    mock_get = MagicMock(
+        return_value=_make_response(
+            200,
+            {
+                "results": [
+                    {
+                        "t": int(datetime(2026, 4, 1, tzinfo=timezone.utc).timestamp() * 1000),
+                        "o": 1.0, "h": 1.0, "l": 1.0, "c": 1.0, "v": 1,
+                    }
+                ]
+            },
+        )
+    )
+    with patch.object(httpx.Client, "get", mock_get):
+        try:
+            call_fn(PolygonAdapter())
+        except Exception:
+            # Downstream parsing may reject the stub payload for some endpoints —
+            # irrelevant here; we only assert HOW the request was made.
+            pass
+    args, kwargs = mock_get.call_args
+    url = args[0] if args else kwargs.get("url", "")
+    params = kwargs.get("params") or {}
+    headers = kwargs.get("headers") or {}
+    return url, params, headers
+
+
+def test_get_ohlcv_key_in_header_not_query(monkeypatch):
+    url, params, headers = _capture_get_call(
+        monkeypatch, lambda a: a.get_ohlcv("NVDA", date(2026, 4, 1), date(2026, 4, 2))
+    )
+    assert "SECRET_KEY_123" not in url and "apiKey" not in url
+    assert "apiKey" not in params and "SECRET_KEY_123" not in str(params)
+    assert headers.get("Authorization") == "Bearer SECRET_KEY_123"
+
+
+def test_get_fundamentals_key_in_header_not_query(monkeypatch):
+    url, params, headers = _capture_get_call(
+        monkeypatch, lambda a: a.get_fundamentals("NVDA")
+    )
+    assert "SECRET_KEY_123" not in url and "apiKey" not in url
+    assert "apiKey" not in params and "SECRET_KEY_123" not in str(params)
+    assert headers.get("Authorization") == "Bearer SECRET_KEY_123"
